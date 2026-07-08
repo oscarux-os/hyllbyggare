@@ -2,6 +2,9 @@
   # Appen ligger i en undermapp, inte i repots rot.
   base = "hyllbyggare-app"
   command = "npm run build"
+  # Relativt base -> hyllbyggare-app/.next. Måste skilja sig från base,
+  # annars vägrar @netlify/plugin-nextjs att köra.
+  publish = ".next"
 
 # Tvinga Netlify att använda den officiella Next.js-runtimen.
 # Utan denna kan Netlify råka publicera fel mapp -> "Page not found".
