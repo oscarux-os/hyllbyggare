@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anamosa – serie-sida (mockup)</title>
+<style>
+  /* Mio-tokens (design.md). Fonter refereras från Next-projektets public/fonts –
+     syns i webbläsare öppnad lokalt; annars faller den tillbaka till system. */
+  @font-face{font-family:"Bulldog";src:url("../hyllbyggare-app/public/fonts/BulldogMioMedium.otf") format("opentype");font-weight:500;font-display:swap}
+  @font-face{font-family:"Source Sans 3";src:url("../hyllbyggare-app/public/fonts/SourceSans3-VariableFont_wght.ttf") format("truetype");font-weight:200 900;font-display:swap}
+  :root{
+    --bg:oklch(0.99 0 0); --fg:oklch(0.18 0 0); --card:oklch(1 0 0);
+    --muted:oklch(0.96 0 0); --muted-fg:oklch(0.50 0 0); --border:oklch(0.90 0 0);
+    --primary:oklch(0.18 0 0); --primary-fg:oklch(0.99 0 0);
+    --accent:oklch(0.95 0 0);
+    --heading:"Bulldog","Source Sans 3",system-ui,sans-serif;
+    --body:"Source Sans 3",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;letter-spacing:-0.02em}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.5}
+  .wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+  h1,h2,h3,h4{font-family:var(--heading);font-weight:500;margin:0}
+  .eyebrow{font-size:12px;text-transform:uppercase;color:var(--muted-fg)}
+  .lead{font-size:20px;color:var(--muted-fg)}
+  .muted{color:var(--muted-fg)}
+  .btn{display:inline-flex;align-items:center;height:48px;padding:0 24px;font-weight:600;
+       border-radius:4px;text-decoration:none;font-size:16px}
+  .btn-primary{background:var(--primary);color:var(--primary-fg)}
+  .btn-ghost{background:var(--card);color:var(--fg);border:1px solid var(--border)}
+  .ph{background:var(--muted);color:var(--muted-fg);display:flex;align-items:center;justify-content:center;
+      font-size:12px}
+  section{border-top:1px solid var(--border)}
+  .grid{display:grid;gap:12px}
+  .card{border:1px solid var(--border);background:var(--card);text-decoration:none;color:var(--fg);display:block}
+  .card:hover{border-color:var(--primary)}
+  .card .body{padding:16px}
+  .link{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:14px;text-decoration:none;color:var(--fg)}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
+  .chip{height:36px;padding:0 16px;display:inline-flex;align-items:center;border:1px solid var(--border);
+        background:var(--card);border-radius:4px;font-size:14px;cursor:pointer;font-family:var(--body);color:var(--fg)}
+  .chip.on{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
+  .carousel{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;cursor:grab;padding-bottom:8px;scrollbar-width:none}
+  .carousel::-webkit-scrollbar{display:none}
+  .carousel.drag{cursor:grabbing}
+  .vcard{flex:0 0 260px;scroll-snap-align:start;border:1px solid var(--border);background:var(--card);text-decoration:none;color:var(--fg)}
+  .vcard:hover{border-color:var(--primary)}
+  .tag{font-size:12px;text-transform:uppercase;color:var(--muted-fg)}
+  .front{aspect-ratio:4/5;position:relative;border:1px solid var(--border);overflow:hidden}
+  .knob{position:absolute;right:12%;top:50%;transform:translateY(-50%);width:5px;height:26%;background:rgba(255,255,255,.85);border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="wrap">
+  <section style="border:0;display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center;padding:80px 0">
+    <div>
+      <div class="eyebrow">Anamosa · förvaringssystem</div>
+      <h1 style="font-size:clamp(2rem,4vw,2.5rem);line-height:1.05;margin:12px 0 16px">Förvaring som formar sig efter ditt hem</h1>
+      <p class="lead" style="max-width:26rem;margin:0 0 24px">Bygg en hylla, byrå eller hel vägg som passar precis din plats och dina saker. Du väljer storlek, fack och finish – vi tillverkar den åt dig.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <a class="btn btn-primary" href="#">Börja bygga</a>
+        <a class="btn btn-ghost" href="#inspiration">Se inspiration</a>
+      </div>
+    </div>
+    <div class="ph" style="aspect-ratio:4/3">Hero-bild</div>
+  </section>
+</div>
+
+<!-- USP -->
+<div class="wrap">
+  <section style="padding:64px 0">
+    <h2 style="font-size:30px;max-width:36rem;margin-bottom:12px">Ett system, oändligt många möbler</h2>
+    <p class="lead" style="max-width:42rem;margin:0 0 40px">Anamosa bygger på en enkel kub i massiv ek och fanér. Kombinera kuberna i höjd och bredd, fyll dem med öppna fack, luckor eller lådor – och gör möbeln till din.</p>
+    <div class="grid" style="grid-template-columns:repeat(4,1fr)">
+      <div><div style="font-size:24px">📐</div><h4 style="font-size:20px;margin:8px 0 4px">Måttanpassat</h4><p class="muted" style="font-size:14px;margin:0">Väx i 40 cm-steg tills den passar din vägg – på centimetern.</p></div>
+      <div><div style="font-size:24px">▦</div><h4 style="font-size:20px;margin:8px 0 4px">Vägg eller golv</h4><p class="muted" style="font-size:14px;margin:0">Häng den svävande eller ställ den på ben. Du bestämmer.</p></div>
+      <div><div style="font-size:24px">▤</div><h4 style="font-size:20px;margin:8px 0 4px">Fronter & finish</h4><p class="muted" style="font-size:14px;margin:0">Slät, ribbor eller glas. Ek eller kulör. Blanda som du vill.</p></div>
+      <div><div style="font-size:24px">☰</div><h4 style="font-size:20px;margin:8px 0 4px">Genomtänkt inuti</h4><p class="muted" style="font-size:14px;margin:0">Flyttbara hyllplan, mjukstängande lådor och dolda beslag.</p></div>
+    </div>
+  </section>
+</div>
+
+<!-- Fronter -->
+<div class="wrap">
+  <section style="padding:64px 0">
+    <h2 style="font-size:30px;margin-bottom:8px">Välj din front</h2>
+    <p class="muted" style="max-width:34rem;margin:0 0 32px">Tre uttryck på samma system – slät, ribbor eller glas. Blanda dem gärna mellan facken.</p>
+    <div class="grid" style="grid-template-columns:repeat(3,1fr)">
+      <figure style="margin:0">
+        <div class="front" style="background:#C9A36A"><span class="knob"></span></div>
+        <h4 style="font-size:20px;margin:16px 0 4px">Slät</h4>
+        <p class="muted" style="font-size:14px;margin:0">Ren, slät yta. Tidlös och lätt att matcha med annat.</p>
+      </figure>
+      <figure style="margin:0">
+        <div class="front" style="background:#C9A36A;background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.13) 0 3px,transparent 3px 13px)"><span class="knob"></span></div>
+        <h4 style="font-size:20px;margin:16px 0 4px">Ribbor</h4>
+        <p class="muted" style="font-size:14px;margin:0">Vertikala ribbor som ger relief och en varm, taktil yta.</p>
+      </figure>
+      <figure style="margin:0">
+        <div class="front" style="background:#C9A36A;padding:10px">
+          <div style="width:100%;height:100%;background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.5);position:relative;overflow:hidden">
+            <span style="position:absolute;left:14%;bottom:12%;width:8%;height:46%;background:rgba(60,50,40,.35)"></span>
+            <span style="position:absolute;left:26%;bottom:12%;width:8%;height:60%;background:rgba(60,50,40,.28)"></span>
+            <span style="position:absolute;left:38%;bottom:12%;width:8%;height:38%;background:rgba(60,50,40,.32)"></span>
+            <span class="knob" style="right:8%;background:rgba(60,50,40,.6)"></span>
+          </div>
+        </div>
+        <h4 style="font-size:20px;margin:16px 0 4px">Glas</h4>
+        <p class="muted" style="font-size:14px;margin:0">Klarglas som visar upp innehållet – för det du vill lyfta fram.</p>
+      </figure>
+    </div>
+  </section>
+</div>
+
+<!-- Varianter / inspirationskarusell -->
+<div class="wrap">
+  <section style="padding:64px 0">
+    <h2 style="font-size:30px;margin-bottom:8px">Vad vill du bygga?</h2>
+    <p class="muted" style="max-width:34rem;margin:0 0 24px">Utforska olika stilar inom varje möbeltyp – välj en du gillar och gör den till din.</p>
+    <div class="chips" id="chips"></div>
+    <div class="carousel" id="carousel"></div>
+  </section>
+</div>
+
+<!-- Inspiration -->
+<div class="wrap">
+  <section id="inspiration" style="padding:64px 0">
+    <h2 style="font-size:30px;margin-bottom:8px">Inspiration</h2>
+    <p class="muted" style="max-width:32rem;margin:0 0 32px">Se hur andra har byggt sin Anamosa – och låna gärna idéer.</p>
+    <div class="grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="ph" style="grid-column:span 2;aspect-ratio:4/3">Vardagsrum</div>
+      <div class="ph" style="aspect-ratio:1">Detalj</div>
+      <div class="ph" style="aspect-ratio:1">Hall</div>
+      <div class="ph" style="aspect-ratio:1">Kontor</div>
+      <div class="ph" style="aspect-ratio:1">Sovrum</div>
+      <div class="ph" style="grid-column:span 2;aspect-ratio:4/3">Matplats</div>
+    </div>
+  </section>
+</div>
+
+<!-- CTA -->
+<div class="wrap">
+  <section style="border:0;background:var(--primary);color:var(--primary-fg);text-align:center;padding:64px 24px;margin:64px 0;display:flex;flex-direction:column;align-items:center;gap:20px">
+    <h2 style="font-size:30px;max-width:32rem">Redo att bygga din egen?</h2>
+    <p style="font-size:20px;max-width:28rem;opacity:.9;margin:0">Det tar bara några minuter – och du ser resultatet direkt.</p>
+    <a class="btn" style="background:var(--bg);color:var(--fg)" href="#">Öppna hyllbyggaren</a>
+  </section>
+</div>
+
+<script>
+  const CATS=["Alla","Bokhylla","Skänk","TV-bänk","Vitrinskåp","Byrå"];
+  const EX=[
+    {cat:"Bokhylla",style:"Mosaik",blurb:"Oregelbunden grid som blir ett blickfång."},
+    {cat:"Bokhylla",style:"Jämn",blurb:"Rent och stramt för böcker i mängd."},
+    {cat:"Bokhylla",style:"Accent",blurb:"Mest öppet med en glasrad som sticker ut."},
+    {cat:"Skänk",style:"Sockel",blurb:"Låg med dold förvaring i botten."},
+    {cat:"Skänk",style:"Pussel",blurb:"Lekfull mix av luckor och lådor."},
+    {cat:"TV-bänk",style:"Rytm",blurb:"Öppet för tekniken, stängt runtomkring."},
+    {cat:"TV-bänk",style:"Jämn",blurb:"Låg och stram, håller ihop rummet."},
+    {cat:"Vitrinskåp",style:"Accent",blurb:"Glasvitriner som lyfter det fina."},
+    {cat:"Byrå",style:"Jämn",blurb:"Rader av lådor – praktiskt och stramt."},
+    {cat:"Byrå",style:"Sockel",blurb:"Lådor med en öppen hylla på toppen."},
+  ];
+  let filter="Alla";
+  const chips=document.getElementById('chips'), carousel=document.getElementById('carousel');
+  const renderChips=()=>chips.innerHTML=CATS.map(c=>`<button class="chip ${c===filter?'on':''}" data-c="${c}">${c}</button>`).join('');
+  const renderCards=()=>{
+    const list=EX.filter(e=>filter==='Alla'||e.cat===filter);
+    carousel.innerHTML=list.map(e=>`
+      <a class="vcard" href="#">
+        <div class="ph" style="aspect-ratio:3/4">${e.cat} · ${e.style}</div>
+        <div style="padding:16px">
+          <div class="tag">${e.style}</div>
+          <h4 style="font-size:20px;margin:2px 0 4px">${e.cat}</h4>
+          <p class="muted" style="font-size:14px;margin:0 0 12px">${e.blurb}</p>
+          <span class="link">Utforska →</span>
+        </div>
+      </a>`).join('');
+  };
+  chips.onclick=e=>{const b=e.target.closest('.chip');if(b){filter=b.dataset.c;renderChips();renderCards();}};
+  renderChips();renderCards();
+  // dra för att scrolla
+  let d={down:false,x:0,l:0,moved:false};
+  carousel.addEventListener('pointerdown',e=>{d={down:true,x:e.clientX,l:carousel.scrollLeft,moved:false};carousel.classList.add('drag');});
+  carousel.addEventListener('pointermove',e=>{if(!d.down)return;if(Math.abs(e.clientX-d.x)>4)d.moved=true;carousel.scrollLeft=d.l-(e.clientX-d.x);});
+  addEventListener('pointerup',()=>{d.down=false;carousel.classList.remove('drag');});
+  carousel.addEventListener('click',e=>{if(d.moved)e.preventDefault();},true);
+</script>
+</body>
+</html>

@@ -1,0 +1,189 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Bulldog (heading) – licensierade filer i /public/fonts */
+@font-face {
+  font-family: "Bulldog";
+  src: url("/fonts/BulldogMioLight.otf") format("opentype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bulldog";
+  src: url("/fonts/BulldogMioRegular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bulldog";
+  src: url("/fonts/BulldogMioItalic.otf") format("opentype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bulldog";
+  src: url("/fonts/BulldogMioMedium.otf") format("opentype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bulldog";
+  src: url("/fonts/BulldogMioMediumItalic.otf") format("opentype");
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bulldog";
+  src: url("/fonts/BulldogMioBold.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Bulldog";
+  src: url("/fonts/BulldogMioBoldItalic.otf") format("opentype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Source Sans 3 (body) – variabel font, alla vikter i en fil */
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/SourceSans3-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/SourceSans3-Italic-VariableFont_wght.ttf") format("truetype");
+  font-weight: 200 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Mio möbler – design-tokens (oklch). Källa: design.md. Light mode only.
+   Färgvariabler lagras som oklch-komponenter så Tailwind kan lägga på opacitet
+   via oklch(var(--token) / <alpha-value>) (states: hover 90% / active 80%). */
+:root {
+  --background: 0.99 0 0;
+  --foreground: 0.18 0 0;
+  --card: 1 0 0;
+  --card-foreground: 0.18 0 0;
+  --popover: 1 0 0;
+  --popover-foreground: 0.18 0 0;
+  --primary: 0.18 0 0;
+  --primary-foreground: 0.99 0 0;
+  --secondary: 0.95 0 0;
+  --secondary-foreground: 0.25 0 0;
+  --muted: 0.96 0 0;
+  --muted-foreground: 0.5 0 0;
+  --accent: 0.95 0 0;
+  --accent-foreground: 0.2 0 0;
+  --destructive: 0.55 0.22 27;
+  --destructive-foreground: 0.99 0 0;
+  --sale: 0.58 0.19 38;
+  --sale-foreground: 0.99 0 0;
+  --border: 0.9 0 0;
+  --input: 0.9 0 0;
+  --ring: 0.2 0 0;
+
+  --font-heading: "Bulldog", "Source Sans 3", "Source Sans Pro", system-ui, sans-serif;
+  --font-body: "Source Sans 3", "Source Sans Pro", system-ui, sans-serif;
+
+  --radius-button: 0.25rem;
+}
+
+@layer base {
+  html,
+  body {
+    background: oklch(var(--background));
+    color: oklch(var(--foreground));
+    font-family: var(--font-body);
+    letter-spacing: -0.02em;
+  }
+  /* fokusring på :focus-visible för alla interaktiva element */
+  :focus-visible {
+    outline: 2px solid oklch(var(--ring));
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+}
+
+/* Dölj den globala headern när konfiguratorn är öppen (den har egen köpribba). */
+body.hide-site-header #site-header {
+  display: none;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Nivåbyte i konfigurator-panelen – animera bara opacity/transform (billigt, ryckfritt).
+   Nivå 2 glider in från höger, nivå 1 tillbaka från vänster. */
+@keyframes panel-enter-right {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes panel-enter-left {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: none; }
+}
+.panel-enter-right {
+  animation: panel-enter-right 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.panel-enter-left {
+  animation: panel-enter-left 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Val-feedback: bocken på vald tile fjädrar in (ease-spring, liten overshoot). */
+@keyframes check-in {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+.check-in {
+  animation: check-in 250ms cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+/* Valtexten (namn + beskrivning) glider mjukt upp när valet byts. */
+@keyframes copy-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.copy-enter {
+  animation: copy-enter 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Mobil redigerings-overlay glider upp över grundvalen. */
+@keyframes sheet-enter {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+.sheet-enter {
+  animation: sheet-enter 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Ren fade utan transform – för element som har egna translate/scale (t.ex. handtag). */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-in {
+  animation: fade-in 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}

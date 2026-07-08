@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hyllbyggare – prototyp</title>
+<style>
+  :root{
+    --bg:#F4F3EE; --surface:#FFFFFF; --line:#D3D1C7; --line-2:#B4B2A9;
+    --text:#2C2C2A; --text-2:#5F5E5A; --muted:#8A8880; --accent:#D85A30; --accent-bg:#FBEDE7;
+    --radius:10px; --frame:#D8BC8E;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+       color:var(--text);background:var(--bg);line-height:1.5}
+  .wrap{display:flex;gap:28px;max-width:1180px;margin:0 auto;padding:28px;align-items:flex-start}
+  .preview{flex:1;position:sticky;top:28px;min-width:0}
+  .stagewrap{position:relative}
+  .stage{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+         aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .ph{font-size:12px;color:var(--muted);text-align:center;margin-top:10px}
+
+  /* on-image add buttons */
+  .add{position:absolute;height:40px;border-radius:999px;border:1px solid var(--line);
+       background:var(--surface);color:var(--text);line-height:1;cursor:pointer;z-index:4;
+       display:inline-flex;align-items:center;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);
+       transition:border-color .15s ease,color .15s ease}
+  .add .ic{width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 auto}
+  .add .label{white-space:nowrap;max-width:0;opacity:0;overflow:hidden;font-size:14px;font-weight:500;
+       transition:max-width .2s ease,opacity .2s ease,padding .2s ease;padding:0}
+  .add:hover{border-color:var(--accent);color:var(--accent)}
+  .add:hover .label{max-width:180px;opacity:1;padding-right:16px}
+  .add-top{top:8px;left:50%;transform:translateX(-50%)}
+  .add-right{right:8px;top:50%;transform:translateY(-50%)}
+
+  /* shelf */
+  .shelf{display:flex;flex-direction:column;background:var(--frame);padding:6px;gap:6px;border-radius:5px;
+         transform-origin:center;box-shadow:0 6px 24px rgba(0,0,0,.10)}
+  .band{display:flex;gap:6px;position:relative;cursor:pointer}
+  .band.hl{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+  .band.hl::after{content:"";position:absolute;inset:0;background:var(--accent);opacity:.16;pointer-events:none;border-radius:3px}
+  .cell{flex:1;position:relative;border-radius:2px;min-width:26px;overflow:hidden}
+  .dfront{flex:1;position:relative;box-shadow:inset 0 0 0 1px rgba(0,0,0,.14);border-radius:1px}
+  .h-bar{position:absolute;height:4px;width:42%;border-radius:3px;top:50%;left:50%;transform:translate(-50%,-50%)}
+  .h-vert{position:absolute;width:4px;height:40%;border-radius:3px;top:50%;right:12%;transform:translateY(-50%)}
+  .h-dot{position:absolute;width:7px;height:7px;border-radius:50%}
+  .h-grip{position:absolute;border-radius:2px;opacity:.85}
+  .seam{position:absolute;left:18%;top:10%;bottom:10%;width:1px;background:rgba(0,0,0,.12)}
+  .legs{display:flex;justify-content:space-between;padding:0 8px}
+  .leg{background:#A9844E}
+
+  /* per-band popover */
+  .pop{position:absolute;right:10px;z-index:5;width:230px;background:var(--surface);border:1px solid var(--line);
+       border-radius:14px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,.16);display:none}
+  .pop.show{display:block}
+  .pop h4{margin:0 0 10px;font-size:13px;font-weight:600;color:var(--text-2)}
+  .pop .lbl{font-size:13px;font-weight:600;margin:12px 0 6px}
+  .pop .note{font-size:12px;color:var(--muted);margin-top:8px;text-align:center}
+  .pop .msg{font-size:13px;color:var(--text-2);text-align:center;padding:8px 6px 2px;line-height:1.45}
+
+  /* panel */
+  .panel{width:380px;flex-shrink:0;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px}
+  h1{font-size:20px;font-weight:600;margin:0 0 2px}
+  .sub{font-size:13px;color:var(--text-2);margin:0 0 18px}
+  .price{font-size:22px;font-weight:600;margin:0 0 18px}
+  .row{margin-bottom:20px}
+  .lbl{font-size:14px;font-weight:600;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline}
+  .lbl .val{font-weight:400;color:var(--text-2);font-size:13px}
+  .seg{display:flex;background:#F1EFE8;border-radius:999px;padding:4px;gap:2px}
+  .seg button{flex:1;border:0;background:transparent;border-radius:999px;padding:9px 6px;font-size:14px;
+              color:var(--text-2);cursor:pointer;font-family:inherit;white-space:nowrap}
+  .seg button.on{background:var(--surface);color:var(--accent);box-shadow:0 0 0 1px var(--line);font-weight:500}
+  .seg button:disabled{opacity:.4;cursor:not-allowed}
+  .range{position:relative;height:48px}
+  .range .track{position:absolute;top:50%;left:10px;right:10px;height:3px;background:var(--line);border-radius:2px;transform:translateY(-50%)}
+  .range .fill{position:absolute;top:50%;left:10px;height:3px;background:var(--accent);border-radius:2px;transform:translateY(-50%)}
+  .range .dot{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;background:var(--line-2);
+              transform:translate(-50%,-50%);cursor:pointer;z-index:1}
+  .range .dot.on{background:var(--accent)}
+  .range .pill{position:absolute;top:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--line);
+       border-radius:999px;padding:8px 14px;font-size:14px;font-weight:500;color:var(--accent);
+       box-shadow:0 1px 4px rgba(0,0,0,.10);white-space:nowrap;z-index:2;cursor:grab;touch-action:none;user-select:none}
+  .range .pill:active{cursor:grabbing}
+  .stylewrap{position:relative}
+  .stylewrap::after{content:"";position:absolute;top:0;bottom:0;right:0;width:44px;pointer-events:none;
+       background:linear-gradient(to right,rgba(255,255,255,0),var(--surface))}
+  .stylebar{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none;padding-right:24px;cursor:grab}
+  .stylebar.dragging{cursor:grabbing}
+  .stylebar.dragging .stile{pointer-events:none}
+  .stylebar::-webkit-scrollbar{display:none}
+  .stile{flex:0 0 auto;min-width:70px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);
+         padding:9px 6px;cursor:pointer;text-align:center;font-size:12px;color:var(--text-2)}
+  .stile.on{border-color:var(--accent);color:var(--accent)}
+  .stile svg{display:block;margin:0 auto 5px}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .tile{border:1.5px solid var(--line);border-radius:var(--radius);background:var(--surface);
+        padding:8px 4px;cursor:pointer;text-align:center;font-size:11px;color:var(--text-2)}
+  .tile.on{border-color:var(--accent);color:var(--accent)}
+  .tile svg{display:block;margin:0 auto 4px}
+  .swatches{display:flex;gap:10px;flex-wrap:wrap}
+  .sw{width:34px;height:34px;border-radius:50%;cursor:pointer;border:2px solid transparent;box-shadow:0 0 0 1px var(--line)}
+  .sw.on{border-color:var(--surface);box-shadow:0 0 0 2px var(--accent)}
+  .optdesc{margin-top:12px}
+  .optdesc b{display:block;font-size:15px;font-weight:600;margin-bottom:2px}
+  .optdesc span{color:var(--text-2);font-size:14px}
+  .hide{display:none}
+  .cta{width:100%;border:0;background:var(--accent);color:#fff;font-size:15px;font-weight:600;
+       padding:14px;border-radius:999px;cursor:pointer;font-family:inherit;margin-top:8px}
+  hr{border:0;border-top:1px solid var(--line);margin:20px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="preview">
+    <div class="stagewrap" id="stagewrap">
+      <button class="add add-top" id="addTop" aria-label="Lägg till rad"><span class="ic">+</span><span class="label">Lägg till rad</span></button>
+      <button class="add add-right" id="addRight" aria-label="Lägg till kolumn"><span class="ic">+</span><span class="label">Lägg till kolumn</span></button>
+      <div class="stage" id="stage"></div>
+      <div class="pop" id="pop"></div>
+    </div>
+    <div class="ph">Håll musen över en rad för att ändra den · tryck + för att bygga ut · bilderna är platshållare så länge</div>
+  </div>
+
+  <div class="panel">
+    <h1>Hyllbyggare</h1>
+    <p class="sub">Bygg din egen – välj storlek, fack och finish.</p>
+    <p class="price" id="price">≈ 0 kr</p>
+
+    <div class="row">
+      <div class="lbl">Stil</div>
+      <div class="stylewrap"><div class="stylebar" id="styles"></div></div>
+      <div class="optdesc" id="styledesc"></div>
+    </div>
+
+    <div class="row">
+      <div class="lbl">Bredd</div>
+      <div class="range" id="wrange"></div>
+    </div>
+    <div class="row">
+      <div class="lbl">Höjd</div>
+      <div class="range" id="hrange"></div>
+    </div>
+
+    <div class="row">
+      <div class="lbl">Montering</div>
+      <div class="seg" id="mount"><button data-v="vagg" class="on">Väggmonterad</button><button data-v="staende">Stående</button></div>
+    </div>
+    <div class="row hide" id="legrow"><div class="lbl">Ben</div><div class="tiles" id="legs"></div>
+      <div class="optdesc" id="legdesc"></div></div>
+
+    <hr>
+    <div class="row"><div class="lbl">Material</div>
+      <div class="seg" id="material"><button data-v="ek" class="on">Ek</button><button data-v="laminat">Laminat</button></div></div>
+    <div class="row"><div class="lbl">Färg</div><div class="swatches" id="swatches"></div>
+      <div class="optdesc" id="colordesc"></div></div>
+    <div class="row"><div class="lbl">Frontstil</div>
+      <div class="seg" id="front"><button data-v="plain" class="on">Slät</button><button data-v="slats">Ribbor</button><button data-v="glass">Glas</button></div></div>
+    <div class="row"><div class="lbl">Handtag</div><div class="tiles" id="handles"></div>
+      <div class="optdesc" id="handledesc"></div></div>
+
+    <hr>
+    <div class="ph" style="text-align:left">Håll musen över en rad i bilden så ändrar du dess fack – luckor, lådor, hyllplan och frontstil.</div>
+
+    <button class="cta">Lägg i varukorg</button>
+  </div>
+</div>
+
+<script>
+const U=64, STEP=40, COLMAX=6, ROWMAX=6;
+function newRow(){return {h:40,doors:'none',drawers:'none',shelves:0,front:'plain'};}
+function r(o){return Object.assign(newRow(),o||{});}
+// stilar = mönster som ANPASSAS till vald storlek (bevarar radhöjder & kolumner)
+const sh1=h=>Math.min(1,maxShelves(h));
+const STYLES=[
+  // Jämn: lugnt enhetligt rutnät, ett hyllplan där höjden tillåter
+  {id:'jamn',name:'Jämn',desc:'Ett lugnt, jämnt rutnät. Tidlöst och enkelt.',gen:(c,rows)=>rows.map(row=>r({h:row.h,shelves:sh1(row.h)}))},
+  // Sockel: öppet upptill, lameldörrar nederst + en låd-rad strax ovanför
+  {id:'sockel',name:'Sockel',desc:'Öppet upptill, stängt nedtill – funkar nästan alltid.',gen:(c,rows)=>{const n=rows.length;return rows.map((row,i)=>
+     i>=n-1 ? r({h:row.h,doors:'max',front:'slats'})
+   : i===n-2 ? (drawersAllowed(row.h)?r({h:row.h,drawers:'some'}):r({h:row.h,doors:'some',front:'slats'}))
+   : r({h:row.h,shelves:sh1(row.h)}));}},
+  // Rytm: öppna rader varvas med lamel-luck-rader
+  {id:'rytm',name:'Rytm',desc:'Öppet och stängt om vartannat – lite mer liv.',gen:(c,rows)=>rows.map((row,i)=>
+     i%2===0 ? r({h:row.h,shelves:sh1(row.h)}) : r({h:row.h,doors:'max',front:'slats'}))},
+  // Mosaik: oregelbunden grid med olika breda öppna fack + enstaka glasvitrin
+  {id:'mosaik',name:'Mosaik',desc:'Olika stora fack i en fri komposition.',gen:(c,rows)=>{const pats=[[2,1,1],[1,2,1],[1,1,2],[1,3]];
+     return rows.map((row,i)=>{const sp=spanRow(pats[i%pats.length],c);
+       const cells=sp.map((s,j)=>{const k=i*3+j;
+         if(k%7===0&&s>=2) return cellObj('l',s,'glass');
+         return cellObj('o',s,'plain',(k%3===0&&maxShelves(row.h)>=1)?1:0);});
+       return r({h:row.h,cells});});}},
+  // Pussel: schackrutigt – lamel-luckor varvas med lådor/öppet
+  {id:'pussel',name:'Pussel',desc:'Luckor och lådor i schackmönster – lekfullt.',gen:(c,rows)=>rows.map((row,i)=>{
+     const sp=spanRow(i%2===0?[1,1,2]:[2,1,1],c);
+     const cells=sp.map((s,j)=>{ if((i+j)%2===0) return cellObj('l',s,'slats');
+       const dt=(i%2 && drawersAllowed(row.h))?'d':'o'; return cellObj(dt,s,'plain'); });
+     return r({h:row.h,cells});})},
+  // Accent: mest öppet, en rad med glasvitriner som blickfång
+  {id:'accent',name:'Accent',desc:'Mest öppet, med en rad glasvitriner som får sticka ut.',gen:(c,rows)=>{const n=rows.length,mid=Math.floor((n-1)/2);
+     return rows.map((row,i)=>{
+       if(i===mid){const sp=spanRow([1,1,1,1],c);
+         return r({h:row.h,cells:sp.map((s,j)=> j%2 ? cellObj('l',s,'glass') : cellObj('o',s,'plain',sh1(row.h)))});}
+       return r({h:row.h,shelves:sh1(row.h)});});}}
+];
+function applyStyle(id){const g=STYLES.find(s=>s.id===id);const gen=g.gen(S.cols,S.rows);
+  // behåll rader som användaren finjusterat (låsta); övriga följer stilen
+  return S.rows.map((row,i)=> row.locked ? row : gen[i]);}
+const S={cols:4, rows:[newRow(),newRow(),newRow()], mount:'vagg', leg:'rund',
+         material:'ek', color:'#C9A36A', front:'plain', handle:'h1', style:'jamn'};
+let active=null;
+
+const COLORS={
+  ek:[['#C9A36A','Naturlig ek','Ljus och oljad – eken får synas precis som den är.'],
+      ['#6B4F3A','Mörkbetsad ek','Mörkare och varmare, med lite mer dramatik.']],
+  laminat:[['#ECE8DF','Vit / beige','Ljus och neutral – lätt att inreda runt.'],
+      ['#B3A998','Taupe','Varmgrå och mjuk, lugnar ner rummet.'],
+      ['#3C3C3A','Mörkgrå','Nästan kolsvart – stramt och tydligt.'],
+      ['#5E7560','Grön','Salviagrön – en lugn färgklick.']]};
+const LEGS=[
+  ['rund','Rund träfot','Mjuk och rund – en varm, skandinavisk känsla.'],
+  ['sockel','Sockel','Indragen sockel som låter möbeln vila på golvet.'],
+  ['massing','Mässingsben','Smalt mässingsben – en liten guldkant till helheten.'],
+  ['stal','Svart stålben','Smalt och svart, stramt och modernt.']];
+const HANDLES=[
+  ['h1','Grepp','Inbyggt kantgrepp – inget syns, du bara öppnar.'],
+  ['h2','Knopp','Liten rund knopp, klassisk och nätt.'],
+  ['h3','Handtag','Avlångt bygelhandtag – lätt att få tag i.'],
+  ['push','Push-open','Tryck till så öppnas den – helt utan handtag.']];
+const AMT={none:0,some:0.5,max:1};
+// riktiga mått (delad 18 mm-panel) → visas som avrundade hela cm
+const RMM={20:219,40:400,80:782};
+function realW(cols){return Math.round((cols*400-(cols-1)*18)/10);}
+function realH(rows){const mm=rows.reduce((a,x)=>a+(RMM[x.h]||x.h*10),0)-(rows.length-1)*18;return Math.round(mm/10);}
+// --- villkor / regler (representativa; bekräfta hela uppsättningen med ACTONA) ---
+function maxShelves(h){ return h>=80?2 : (h>=40?1:0); }
+function drawersAllowed(h){ return h<=40; }
+
+function legIcon(){return '<svg width="26" height="20"><rect x="3" y="2" width="20" height="9" fill="none" stroke="#888" stroke-width="1.5"/><line x1="6" y1="11" x2="6" y2="18" stroke="#888" stroke-width="1.5"/><line x1="20" y1="11" x2="20" y2="18" stroke="#888" stroke-width="1.5"/></svg>';}
+function handleIcon(){return '<svg width="26" height="20"><rect x="4" y="2" width="18" height="16" fill="none" stroke="#888" stroke-width="1.5"/><circle cx="18" cy="10" r="1.8" fill="#888"/></svg>';}
+
+function buildStyles(){
+  styles.innerHTML=STYLES.map(s=>`<div class="stile ${S.style===s.id?'on':''}" data-style="${s.id}">${miniShelf({cols:4,rows:s.gen(4,[r(),r(),r()])})}</div>`).join('');
+  const ss=STYLES.find(s=>s.id===S.style);
+  styledesc.innerHTML = ss ? `<b>${ss.name}</b><span>${ss.desc}</span>` : `<span>Börja med en stil om du vill – eller bygg helt fritt.</span>`;
+}
+function usesGlass(){return S.rows.some(row=>rowCells(row,S.cols).some(c=>c.type==='l'&&c.front==='glass'));}
+function buildTiles(){
+  legs.innerHTML=LEGS.map(l=>`<div class="tile ${S.leg===l[0]?'on':''}" data-leg="${l[0]}">${legIcon()}</div>`).join('');
+  const cl=LEGS.find(l=>l[0]===S.leg); legdesc.innerHTML=`<b>${cl[1]}</b><span>${cl[2]}</span>`;
+  // glasfront → kantgrepp (h1) är inte valbart (gäller både globalt frontval och faktiska glasluckor)
+  const glass = S.front==='glass' || usesGlass();
+  const valid=glass?HANDLES.filter(h=>h[0]!=='h1'):HANDLES;
+  if(!valid.some(h=>h[0]===S.handle)) S.handle=valid[0][0];
+  handles.innerHTML=valid.map(h=>`<div class="tile ${S.handle===h[0]?'on':''}" data-handle="${h[0]}">${handleIcon()}</div>`).join('');
+  const ch=HANDLES.find(h=>h[0]===S.handle);
+  handledesc.innerHTML=`<b>${ch[1]}</b><span>${ch[2]}</span>`+(glass?`<span style="display:block;color:var(--muted);font-size:13px;margin-top:4px">Kantgrepp går inte ihop med glasfront.</span>`:'');
+  buildSwatches();
+}
+function buildSwatches(){
+  const list=COLORS[S.material];
+  swatches.innerHTML=list.map(c=>`<div class="sw ${S.color===c[0]?'on':''}" data-color="${c[0]}" style="background:${c[0]}"></div>`).join('');
+  const cur=list.find(c=>c[0]===S.color)||list[0];
+  const title=S.material==='laminat'?('Laminat '+cur[1]):cur[1];
+  colordesc.innerHTML=`<b>${title}</b><span>${cur[2]||''}</span>`;
+}
+function frameColor(){return S.material==='ek' ? '#D8BC8E' : (S.color==='#ECE8DF'?'#E2DCCF':S.color);}
+
+function fillRow(row,cols){
+  cols=cols||S.cols;
+  const arr=new Array(cols).fill('o');
+  const nd=Math.round(AMT[row.drawers]*cols);
+  for(let c=0;c<nd;c++) arr[c]='d';
+  let ndo=Math.round(AMT[row.doors]*cols), placed=0;
+  for(let c=0;c<cols && placed<ndo;c++){ if(arr[c]==='o'){arr[c]='l';placed++;} }
+  return arr;
+}
+// en rad kan ha egna celler med olika bredd (span i 40-enheter); annars enhetlig
+function cellObj(type,span,front,shelves){return {type,span:span||1,front:front||'plain',shelves:shelves||0};}
+function spanRow(pattern,cols){let o=[],s=0,i=0;while(s<cols){const sp=Math.min(pattern[i%pattern.length],cols-s);o.push(sp);s+=sp;i++;}return o;}
+function rowCells(row,cols){cols=cols||S.cols;
+  if(row.cells) return row.cells;
+  return fillRow(row,cols).map(t=>cellObj(t,1,row.front,t==='o'?row.shelves:0));}
+function miniShelf(cfg){
+  const W=34,H=22,p=1.5,rows=cfg.rows,totalH=rows.reduce((a,x)=>a+x.h,0);
+  let y=p,s=`<svg width="${W}" height="${H}">`;
+  rows.forEach(row=>{const rh=(row.h/totalH)*(H-2*p);
+    const cells=rowCells(row,cfg.cols),tot=cells.reduce((a,c)=>a+c.span,0);let x=p;
+    cells.forEach(c=>{const cw=(c.span/tot)*(W-2*p);
+      if(c.type==='o'){s+=`<rect x="${x}" y="${y}" width="${cw}" height="${rh}" fill="none" stroke="currentColor" stroke-width="0.7" opacity="0.55"/>`;
+        for(let i=1;i<=c.shelves;i++){const ly=y+rh*i/(c.shelves+1);s+=`<line x1="${x}" y1="${ly}" x2="${x+cw}" y2="${ly}" stroke="currentColor" stroke-width="0.6" opacity="0.4"/>`;}}
+      else{const o=c.front==='glass'?0.4:0.85;s+=`<rect x="${x+0.4}" y="${y+0.4}" width="${cw-0.8}" height="${rh-0.8}" fill="currentColor" opacity="${o}"/>`;
+        if(c.type==='l') s+=`<line x1="${x+cw*0.78}" y1="${y+rh*0.3}" x2="${x+cw*0.78}" y2="${y+rh*0.7}" stroke="#fff" stroke-width="0.8"/>`;
+        else s+=`<line x1="${x+cw*0.3}" y1="${y+rh*0.5}" x2="${x+cw*0.7}" y2="${y+rh*0.5}" stroke="#fff" stroke-width="0.8"/>`;}
+      x+=cw;}); y+=rh;});
+  return s+'</svg>';
+}
+function lum(hex){const c=hex.replace('#','');return (0.299*parseInt(c.substr(0,2),16)+0.587*parseInt(c.substr(2,2),16)+0.114*parseInt(c.substr(4,2),16))/255;}
+function hcol(bg){return lum(bg)>0.62?'rgba(0,0,0,.45)':'rgba(255,255,255,.92)';}
+function handleHTML(t){ // t: 'l' lucka, 'd' låda
+  if(S.handle==='push') return '';
+  const hc=hcol(S.color);
+  if(S.handle==='h2') // knopp
+    return t==='d' ? `<div class="h-dot" style="background:${hc};left:50%;top:50%;transform:translate(-50%,-50%)"></div>`
+                   : `<div class="h-dot" style="background:${hc};right:14%;top:50%;transform:translateY(-50%)"></div>`;
+  if(S.handle==='h1') // kantgrepp – tunn list vid kanten
+    return t==='d' ? `<div class="h-grip" style="background:${hc};left:32%;right:32%;top:7%;height:3px"></div>`
+                   : `<div class="h-grip" style="background:${hc};right:9%;top:26%;bottom:26%;width:3px"></div>`;
+  // h3 bygelhandtag
+  return t==='d' ? `<div class="h-bar" style="background:${hc}"></div>`
+                 : `<div class="h-vert" style="background:${hc}"></div>`;
+}
+function cellHTML(t,front,shelves,span){
+  const bg=S.color;
+  const fl=`flex:${span||1};`;
+  if(t==='o'){
+    let sh='';for(let i=1;i<=(shelves||0);i++){const p=i/((shelves||0)+1)*100;
+      sh+=`<div style="position:absolute;left:0;right:0;top:${p}%;height:3px;background:${frameColor()};box-shadow:0 0 0 1px rgba(0,0,0,.10)"></div>`;}
+    return `<div class="cell" style="${fl}background:#fff;box-shadow:inset 0 0 0 1px rgba(0,0,0,.07)">${sh}</div>`;
+  }
+  if(t==='d'){ // drawer: one front filling the cube (no glass)
+    const ex=front==='slats'?`background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.10) 0 2px,transparent 2px 7px);`:'';
+    return `<div class="cell" style="${fl}background:${bg};${ex}box-shadow:inset 0 0 0 1px rgba(0,0,0,.14)">${handleHTML('d')}</div>`;
+  }
+  // door: single panel + edge seam
+  let extra='', op='1';
+  if(front==='glass') op='0.4';
+  if(front==='slats') extra=`background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.10) 0 2px,transparent 2px 7px);`;
+  return `<div class="cell" style="${fl}background:${bg};opacity:${op};${extra}box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)"><div class="seam"></div>${handleHTML('l')}</div>`;
+}
+
+function drawRange(el,cur,max,label){
+  let h='<div class="track"></div>';
+  const fillFrac=max>1?(cur-1)/(max-1):0;
+  h+=`<div class="fill" style="width:calc((100% - 20px) * ${fillFrac})"></div>`;
+  for(let i=1;i<=max;i++){const f=max>1?(i-1)/(max-1):0;
+    h+=`<div class="dot ${i<=cur?'on':''}" data-idx="${i}" style="left:calc(10px + (100% - 20px) * ${f})"></div>`;}
+  h+=`<div class="pill" style="left:calc(10px + (100% - 20px) * ${fillFrac})">${label}</div>`;
+  el.innerHTML=h;
+}
+function render(){
+  const widthCm=realW(S.cols), heightCm=realH(S.rows);
+  drawRange(wrange,S.cols,COLMAX,widthCm+' cm');
+  drawRange(hrange,S.rows.length,ROWMAX,heightCm+' cm');
+  let html='<div class="shelf" id="shelf" style="width:'+(S.cols*U+12)+'px">';
+  S.rows.forEach((row,ri)=>{
+    const bh=row.h/40*U, cells=rowCells(row,S.cols);
+    html+=`<div class="band ${active===ri?'hl':''}" data-row="${ri}" style="height:${bh}px">`+cells.map(c=>cellHTML(c.type,c.front,c.shelves,c.span)).join('')+`</div>`;
+  });
+  if(S.mount==='staende'){
+    if(S.leg==='sockel'){html+=`<div class="legs" style="padding:0"><div class="leg" style="width:100%;height:10px;background:${frameColor()}"></div></div>`;}
+    else{const lw=S.leg==='rund'?6:(S.leg==='massing'?3:3), lc=S.leg==='stal'?'#222':(S.leg==='massing'?'#B8975A':'#A9844E');
+      html+=`<div class="legs"><div class="leg" style="width:${lw}px;height:18px;background:${lc}"></div><div class="leg" style="width:${lw}px;height:18px;background:${lc}"></div></div>`;}
+  }
+  html+='</div>';
+  stage.innerHTML=html;
+  document.getElementById('shelf').style.setProperty('--frame',frameColor());
+  document.getElementById('shelf').style.background=frameColor();
+  // scale to fit
+  requestAnimationFrame(()=>{
+    const sh=document.getElementById('shelf'); if(!sh)return;
+    const sw=stage.clientWidth*0.9, shh=stage.clientHeight*0.9;
+    const scale=Math.min(1, sw/sh.offsetWidth, shh/sh.offsetHeight);
+    sh.style.transform='scale('+scale+')';
+    if(active!==null) positionPop(active);
+  });
+  // bind hovers
+  stage.querySelectorAll('.band').forEach(b=>{
+    b.onmouseenter=()=>{active=+b.dataset.row; document.querySelectorAll('.band').forEach(x=>x.classList.toggle('hl',+x.dataset.row===active)); showPop(active);};
+  });
+  // price
+  buildTiles(); // håll handtagsval i synk med frontval (glas → ej kantgrepp)
+  let closed=0; S.rows.forEach(rw=>rowCells(rw,S.cols).forEach(c=>{if(c.type!=='o')closed+=c.span;}));
+  const price=S.cols*S.rows.length*650 + closed*420 + (S.mount==='staende'?500:0);
+  price_.textContent='≈ '+price.toLocaleString('sv-SE')+' kr';
+}
+const price_=document.getElementById('price');
+
+// per-band popover
+function amtSeg(group,val){return `<div class="seg" data-pop="${group}">${['none','some','max'].map(v=>`<button data-v="${v}" class="${val===v?'on':''}">${({none:'Inga',some:'Några',max:'Alla'})[v]}</button>`).join('')}</div>`;}
+function showPop(ri){
+  const row=S.rows[ri], maxSh=maxShelves(row.h);
+  const hasClosed=row.doors!=='none'||row.drawers!=='none', glassOk=row.doors!=='none';
+  let h=`<h4>Rad ${ri+1}</h4>`;
+  h+=`<div class="lbl">Radhöjd</div><div class="seg" data-pop="h">${[20,40,80].map(v=>`<button data-v="${v}" class="${row.h===v?'on':''}">${v} cm</button>`).join('')}</div>`;
+  h+=`<div class="lbl">Luckor</div>`+amtSeg('doors',row.doors);
+  h+=`<div class="lbl">Lådor</div>`+(drawersAllowed(row.h)
+      ? amtSeg('drawers',row.drawers)
+      : `<div class="msg">Lådor trivs i låga rader – sänk höjden till 40 cm så dyker de upp.</div>`);
+  const hasOpen=rowCells(row,S.cols).some(c=>c.type==='o');
+  let shelvesBlock;
+  if(maxSh===0) shelvesBlock=`<div class="msg">Höj raden lite så får du plats med hyllplan.</div>`;
+  else if(!hasOpen) shelvesBlock=`<div class="msg">Hyllplan behöver ett öppet fack – ta bort en lucka eller låda så frigörs ett.</div>`;
+  else shelvesBlock=`<div class="seg" data-pop="shelves">${Array.from({length:maxSh+1},(_,v)=>`<button data-v="${v}" class="${row.shelves===v?'on':''}">${v}</button>`).join('')}</div>`;
+  h+=`<div class="lbl">Hyllplan (öppna fack)</div>`+shelvesBlock;
+  if(hasClosed){
+    const opts=glassOk?['plain','slats','glass']:['plain','slats'];
+    h+=`<div class="lbl">Frontstil</div><div class="seg" data-pop="front">${opts.map(v=>`<button data-v="${v}" class="${row.front===v?'on':''}">${({plain:'Slät',slats:'Ribbor',glass:'Glas'})[v]}</button>`).join('')}</div>`;
+    if(!glassOk) h+=`<div class="msg">Glasfront sitter bara på luckor – lägg till en lucka först.</div>`;
+  }
+  pop.innerHTML=h;
+  pop.classList.add('show');
+  positionPop(ri);
+}
+function positionPop(ri){
+  const band=stage.querySelector(`.band[data-row="${ri}"]`); if(!band)return;
+  const wr=stagewrap.getBoundingClientRect(), br=band.getBoundingClientRect();
+  let top=br.top-wr.top+br.height/2-pop.offsetHeight/2;
+  top=Math.max(8,Math.min(top, wr.height-pop.offsetHeight-8));
+  pop.style.top=top+'px';
+}
+pop.onclick=e=>{const b=e.target.closest('button'); if(!b||b.disabled)return;
+  const grp=b.parentElement.dataset.pop, v=b.dataset.v, row=S.rows[active];
+  if(row.cells) delete row.cells; // manuell redigering återgår till enhetlig rad
+  if(grp==='h'||grp==='shelves') row[grp]=+v; else row[grp]=v;
+  if(grp==='h'){ // håll beroende val giltiga när höjden ändras
+    row.shelves=Math.min(row.shelves,maxShelves(row.h));
+    if(!drawersAllowed(row.h)) row.drawers='none';
+  }
+  row.locked=true; // raden låses så stilen inte skriver över din finjustering vid omflöde
+  render(); showPop(active);
+};
+stagewrap.addEventListener('mouseleave',()=>{active=null;pop.classList.remove('show');document.querySelectorAll('.band').forEach(x=>x.classList.remove('hl'));});
+
+// size
+function setCols(n){S.cols=Math.min(COLMAX,Math.max(1,n));
+  if(S.style) S.rows=applyStyle(S.style); render();}
+function setRows(n){n=Math.min(ROWMAX,Math.max(1,n));
+  while(S.rows.length<n) S.rows.push(newRow());
+  while(S.rows.length>n) S.rows.pop();
+  if(S.style) S.rows=applyStyle(S.style);
+  render();}
+wrange.onclick=e=>{const d=e.target.closest('.dot');if(d)setCols(+d.dataset.idx);};
+hrange.onclick=e=>{const d=e.target.closest('.dot');if(d)setRows(+d.dataset.idx);};
+// drag the pill to resize
+let drag=null;
+function idxFromX(el,clientX,max){const r=el.getBoundingClientRect();const f=Math.max(0,Math.min(1,(clientX-r.left-10)/(r.width-20)));return Math.round(f*(max-1))+1;}
+wrange.addEventListener('pointerdown',e=>{if(e.target.classList.contains('pill')){drag={el:wrange,max:COLMAX,set:setCols};e.preventDefault();}});
+hrange.addEventListener('pointerdown',e=>{if(e.target.classList.contains('pill')){drag={el:hrange,max:ROWMAX,set:setRows};e.preventDefault();}});
+document.addEventListener('pointermove',e=>{if(drag)drag.set(idxFromX(drag.el,e.clientX,drag.max));});
+document.addEventListener('pointerup',()=>{drag=null;});
+document.getElementById('addRight').onclick=()=>setCols(S.cols+1);
+document.getElementById('addTop').onclick=()=>setRows(S.rows.length+1);
+
+// panel
+function syncSeg(el,val){el.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===val));}
+mount.onclick=e=>{if(e.target.dataset.v){S.mount=e.target.dataset.v;syncSeg(mount,S.mount);legrow.classList.toggle('hide',S.mount!=='staende');render();}};
+material.onclick=e=>{if(e.target.dataset.v){S.material=e.target.dataset.v;syncSeg(material,S.material);S.color=COLORS[S.material][0][0];buildSwatches();render();}};
+front.onclick=e=>{if(e.target.dataset.v){S.front=e.target.dataset.v;syncSeg(front,S.front);S.rows.forEach(r=>r.front=S.front);render();}};
+swatches.onclick=e=>{const s=e.target.closest('.sw');if(s){S.color=s.dataset.color;buildSwatches();render();}};
+legs.onclick=e=>{const t=e.target.closest('.tile');if(t){S.leg=t.dataset.leg;buildTiles();render();}};
+handles.onclick=e=>{const t=e.target.closest('.tile');if(t){S.handle=t.dataset.handle;buildTiles();render();}};
+
+styles.onclick=e=>{const t=e.target.closest('.stile');if(t){
+  S.rows.forEach(r=>delete r.locked); // ny stil tillämpas fullt ut
+  S.style=t.dataset.style; S.rows=applyStyle(S.style); active=null;
+  buildStyles(); render();}}; // anpassar mönstret till nuvarande storlek, ändrar inte mått
+// dra för att scrolla stil-raden
+(function(){let down=false,sx=0,sl=0,moved=false;
+  styles.addEventListener('pointerdown',e=>{down=true;moved=false;sx=e.clientX;sl=styles.scrollLeft;styles.setPointerCapture(e.pointerId);});
+  styles.addEventListener('pointermove',e=>{if(!down)return;const dx=e.clientX-sx;if(Math.abs(dx)>4){moved=true;styles.classList.add('dragging');}styles.scrollLeft=sl-dx;});
+  const end=e=>{down=false;styles.classList.remove('dragging');try{styles.releasePointerCapture(e.pointerId);}catch(_){}};
+  styles.addEventListener('pointerup',end);styles.addEventListener('pointercancel',end);
+  styles.addEventListener('click',e=>{if(moved){e.stopPropagation();e.preventDefault();moved=false;}},true);
+})();
+
+S.rows=applyStyle(S.style); // Jämn vald från start
+buildStyles();buildTiles();render();
+</script>
+</body>
+</html>
