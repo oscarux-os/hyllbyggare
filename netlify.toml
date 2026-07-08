@@ -3,5 +3,7 @@
   base = "hyllbyggare-app"
   command = "npm run build"
 
-# Netlify installerar automatiskt sin officiella Next.js-runtime,
-# så publish-mappen behöver inte anges manuellt.
+# Tvinga Netlify att använda den officiella Next.js-runtimen.
+# Utan denna kan Netlify råka publicera fel mapp -> "Page not found".
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
