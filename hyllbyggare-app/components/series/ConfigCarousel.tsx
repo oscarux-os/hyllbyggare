@@ -40,10 +40,11 @@ export default function ConfigCarousel() {
         />
         <button
           type="button"
-          className="inline-flex h-10 shrink-0 items-center gap-2 border border-foreground px-4 font-body font-semibold rounded-button transition-colors duration-fast hover:bg-accent"
+          aria-label="Filtrera"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center border border-foreground font-body font-semibold rounded-button transition-colors duration-fast hover:bg-accent sm:w-auto sm:px-4"
         >
-          <SlidersHorizontal size={16} />
-          Filtrera
+          <SlidersHorizontal size={16} className="sm:hidden" />
+          <span className="hidden sm:inline">Filtrera</span>
         </button>
       </div>
 
@@ -71,7 +72,7 @@ export default function ConfigCarousel() {
           </div>
 
           {/* Pil-navigering */}
-          <div className="flex justify-end gap-2 px-2 pt-4 md:px-6">
+          <div className="hidden justify-end gap-2 px-2 pt-4 md:flex md:px-6">
             <button
               type="button"
               aria-label="Föregående"
