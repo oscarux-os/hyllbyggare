@@ -1,0 +1,7 @@
+[build]
+  # Appen ligger i en undermapp, inte i repots rot.
+  base = "hyllbyggare-app"
+  command = "npm run build"
+
+# Netlify installerar automatiskt sin officiella Next.js-runtime,
+# så publish-mappen behöver inte anges manuellt.
