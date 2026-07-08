@@ -9,8 +9,8 @@ import { SWATCHES, SWATCH_SELECTED, FUNKTION, FRONT, BESLAG, PREVIEW_IMAGE } fro
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-      <span className="w-16 shrink-0 font-heading text-xl font-medium leading-5 tracking-tight">{label}</span>
+    <div className="flex items-center gap-12">
+      <span className="w-16 shrink-0 whitespace-nowrap font-body text-sm font-medium leading-5 tracking-tight md:text-base">{label}</span>
       {children}
     </div>
   );
@@ -29,7 +29,7 @@ export default function Valmojligheter() {
         <Heading level="display-sm" as="h2">Valmöjligheter</Heading>
 
         <Row label="Färg">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="no-scrollbar flex min-w-0 max-w-full items-center gap-3 overflow-x-auto">
             {SWATCHES.map((hex, i) => {
               const sel = i === color;
               return (
@@ -40,7 +40,7 @@ export default function Valmojligheter() {
                   aria-pressed={sel}
                   onClick={() => setColor(i)}
                   className={cn(
-                    "flex items-center justify-center rounded-full transition-transform duration-fast hover:scale-105",
+                    "flex shrink-0 items-center justify-center rounded-full transition-transform duration-fast hover:scale-105",
                     sel ? "h-9 w-9 border-2 border-foreground p-1" : "h-8 w-8",
                   )}
                 >
@@ -51,9 +51,9 @@ export default function Valmojligheter() {
           </div>
         </Row>
 
-        <Row label="Funktion"><ButtonGroup options={FUNKTION.map((o) => [o, o])} value={funktion} onSet={setFunktion} /></Row>
-        <Row label="Front"><ButtonGroup options={FRONT.map((o) => [o, o])} value={front} onSet={setFront} /></Row>
-        <Row label="Beslag"><ButtonGroup options={BESLAG.map((o) => [o, o])} value={beslag} onSet={setBeslag} /></Row>
+        <Row label="Funktion"><ButtonGroup scroll className="min-w-0 max-w-full" options={FUNKTION.map((o) => [o, o])} value={funktion} onSet={setFunktion} /></Row>
+        <Row label="Front"><ButtonGroup scroll className="min-w-0 max-w-full" options={FRONT.map((o) => [o, o])} value={front} onSet={setFront} /></Row>
+        <Row label="Beslag"><ButtonGroup scroll className="min-w-0 max-w-full" options={BESLAG.map((o) => [o, o])} value={beslag} onSet={setBeslag} /></Row>
       </div>
 
       <div className="relative order-first h-[360px] md:order-none md:h-[600px]">

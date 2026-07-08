@@ -3,7 +3,7 @@ import { Heading, Text } from "../Type";
 // Rubrik före inspirationskarusellen.
 export default function MaterialColorsHead() {
   return (
-    <div className="flex flex-col gap-1 px-2 py-10 md:px-6">
+    <div className="flex flex-col gap-1 px-2 pb-4 pt-8 md:px-6 md:pb-6 md:pt-12">
       <Heading level="display-sm" className="max-w-[520px]">
         Hämta inspiration
       </Heading>
