@@ -261,25 +261,25 @@ export const STYLES: StyleDef[] = [
   {
     id: "kollage",
     name: "Kollage",
-    desc: "Öppna fack i olika storlekar och höjder – luftigt och balanserat.",
+    desc: "Öppna fack i olika storlekar – luftigt och balanserat.",
     gen: (c, rows) => {
       // Regelstyrd komposition med medveten balans. Det breda facket läggs på
       // strikt växlande sida (vänster på jämna rader, höger på udda) så tyngden
       // pendlar och ingen sida blir överlastad. Dess bredd växlar långsamt mellan
-      // 2 och 3 kolumner för kollagekänsla. Höga (80) och låga (40) band varvas,
-      // så två höga aldrig hamnar intill varandra. Hyllplanen sätts av en regel
-      // (breda fack luftiga, smala fler plan) i stället för slump – stabilt och lugnt.
-      return rows.map((_, i) => {
-        const h = i % 2 === 1 ? 80 : 40; // varvat: låg, hög, låg, hög …
+      // 2 och 3 kolumner för kollagekänsla. Radhöjderna lämnas orörda (som alla
+      // stilar) – variationen sitter i fackens bredd och hyllplan, inte i höjden.
+      // Hyllplanen sätts av en regel (breda fack luftiga, smala fler plan) i
+      // stället för slump – stabilt och lugnt.
+      return rows.map((row, i) => {
         const left = i % 2 === 0; // brett fack till vänster på jämna rader, annars höger
         const big = Math.min(i % 4 < 2 ? 2 : 3, Math.max(1, c - 1)); // 2- eller 3-spann
         const narrow = Array<number>(c - big).fill(1); // resterande kolumner som 1-spann
         const spans = left ? [big, ...narrow] : [...narrow, big];
-        const maxSh = maxShelves(h);
+        const maxSh = maxShelves(row.h);
         const cells = spans.map((s) =>
           cellObj("o", s, "plain", s >= 2 ? Math.floor(maxSh / 2) : maxSh),
         );
-        return r({ h, cells });
+        return r({ h: row.h, cells });
       });
     },
     // kolumn: öppet men varierat – hyllplan i varannan sektion ger luftig rytm
@@ -437,7 +437,9 @@ export const CATEGORIES: Category[] = [
   },
 ];
 
-// Tillämpa stil men behåll låsta (finjusterade) rader.
+// Tillämpa stil men behåll låsta (finjusterade) rader. Ingen stil ändrar radhöjderna –
+// storleken (bredd × höjd) styrs enbart av storleks-reglagen, stilen möblerar bara om
+// facken inom den. Så ett stilbyte är alltid storleksstabilt.
 export function applyStyle(styleId: string, cols: number, rows: Row[]): Row[] {
   const g = STYLES.find((s) => s.id === styleId);
   if (!g) return rows;

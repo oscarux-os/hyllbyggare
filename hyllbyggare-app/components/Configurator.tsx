@@ -2,7 +2,7 @@
 
 import { useRef, useState, useLayoutEffect, useEffect } from "react";
 import Image from "next/image";
-import { Info, Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Upload, Trash2, Sofa, Pencil, Truck } from "lucide-react";
+import { Info, Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Upload, Trash2, Sofa, Pencil, Truck, MoreHorizontal } from "lucide-react";
 import { Heading, Text } from "./Type";
 import Tillval from "./TillvalCompact";
 import ProductInfo from "./ProductInfo";
@@ -55,8 +55,12 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   // hyllans faktiska (skalade) rektangel relativt wrapRef – förankrar lägg-till-knapparna
   const [stage, setStage] = useState({ x: 0, y: 0, w: 0, h: 0 });
   const [showDims, setShowDims] = useState(false);
-  const [showScene, setShowScene] = useState(true);
+  // rumsdekoren (växt + lampa) är avstängd som standard – den slås på via "Visa miljö".
+  const [showScene, setShowScene] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  // mobil: verktygsknapparna fälls ihop bakom en mer-knapp i hörnet så de inte tar
+  // hela toppen. Öppnas som en liten kolumn under knappen. Desktop visar dem inline.
+  const [toolsOpen, setToolsOpen] = useState(false);
   // köpribban (pris + produktinfo) ligger fast i toppen och följer med ända
   // över Tillval – döljs när varukorgen i summeringen kommer in i vy.
   const cartRef = useRef<HTMLElement | null>(null);
@@ -238,21 +242,27 @@ export default function Configurator({ initialState = initial, onBack }: { initi
     return () => document.body.classList.remove("hide-site-header");
   }, []);
 
-  // Mät den fasta köpribbans höjd så att valen (Stil m.fl.) på desktop kan börja exakt
-  // 24px under ribban oavsett dess innehåll. På mobil ligger ribban i botten → ingen offset.
+  // Mät den fasta köpribbans höjd. Ribban ligger nu i toppen på både mobil och desktop,
+  // så både verktygsraden i bilden och (på desktop) valpanelen måste börja under den.
   const buyBarRef = useRef<HTMLDivElement>(null);
-  const [panelPadTop, setPanelPadTop] = useState<number | undefined>(undefined);
+  const [barH, setBarH] = useState(0);
+  const [isLg, setIsLg] = useState(false);
   useLayoutEffect(() => {
     const el = buyBarRef.current;
     if (!el) return;
     const mq = window.matchMedia("(min-width: 1024px)");
-    const update = () => setPanelPadTop(mq.matches ? el.getBoundingClientRect().height + 24 : undefined);
+    const update = () => { setBarH(el.getBoundingClientRect().height); setIsLg(mq.matches); };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     mq.addEventListener("change", update);
     return () => { ro.disconnect(); mq.removeEventListener("change", update); };
   }, []);
+  // Verktygsraden i bilden börjar alltid strax under ribban (mobil + desktop). Valpanelen
+  // ligger bredvid bilden bara på desktop – på mobil scrollar den under bilden och behöver
+  // därför ingen offset.
+  const toolbarPadTop = barH > 0 ? barH + (isLg ? 24 : 12) : undefined;
+  const panelPadTop = isLg && barH > 0 ? barH + 24 : undefined;
 
   // Redigeringsläget (nivå 2) nås genom att klicka på en rad/kolumn i bilden. Väl inne
   // stegar man mellan banden med steppern i panelhuvudet. Att lägga till en rad/kolumn
@@ -330,6 +340,16 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       onBack={backToLevel1}
     />
   );
+  // Verktygen delas mellan desktop (inline-rad) och mobil (hopfälld meny).
+  // keepOpen: verktyg som bara ger direkt feedback på hyllan (visa miljö/mått) låter
+  // mobilmenyn stå kvar öppen; övriga (öppnar popover / delar) stänger menyn.
+  const tools = [
+    { label: "Information", icon: <Info size={18} />, active: showInfo, onClick: () => setShowInfo((v) => !v), keepOpen: false },
+    { label: "Visa miljö", icon: <Sofa size={18} />, active: showScene, onClick: () => setShowScene((v) => !v), keepOpen: true },
+    { label: "Visa mått", icon: <Ruler size={18} />, active: showDims, onClick: () => setShowDims((v) => !v), keepOpen: true },
+    { label: "Dela", icon: <Upload size={18} />, active: false, onClick: undefined, keepOpen: false },
+  ];
+
   return (
     <>
     <main className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-12">
@@ -345,11 +365,12 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           : "relative sticky top-0 h-[50svh]"
       }`}>
         {/* ---- topp-rad / verktyg ---- */}
-        {/* mobil: köpribban ligger i botten, så verktygen kan ligga tätt i toppen.
-            desktop: samma toppmarginal som valpanelen så tillbaka/ikonknappar linjerar med titeln "Stil". */}
+        {/* Ribban ligger fast i toppen (mobil + desktop) → verktygsraden börjar strax under
+            den. På desktop ger samma offset som valpanelen att tillbaka/ikonknappar linjerar
+            med titeln "Stil". */}
         <div
           className="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-4 lg:px-6 lg:pb-6"
-          style={panelPadTop !== undefined ? { paddingTop: panelPadTop } : undefined}
+          style={toolbarPadTop !== undefined ? { paddingTop: toolbarPadTop } : undefined}
         >
           <button
             onClick={() => (onBack ? onBack() : typeof window !== "undefined" && window.history.back())}
@@ -360,19 +381,14 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             </span>
             <Text variant="body" className="font-semibold">Tillbaka</Text>
           </button>
-          <div className="flex items-center gap-2">
-            <ToolButton label="Information" active={showInfo} onClick={() => setShowInfo((v) => !v)}>
-              <Info size={18} />
-            </ToolButton>
-            <ToolButton label="Visa miljö" active={showScene} onClick={() => setShowScene((v) => !v)}>
-              <Sofa size={18} />
-            </ToolButton>
-            <ToolButton label="Visa mått" active={showDims} onClick={() => setShowDims((v) => !v)}>
-              <Ruler size={18} />
-            </ToolButton>
-            <ToolButton label="Dela">
-              <Upload size={18} />
-            </ToolButton>
+          {/* desktop: verktygen inline i toppen. mobil: hopfällda i nedre vänstra
+              hörnet – se mer-knappen längre ner i sektionen. */}
+          <div className="hidden items-center gap-2 lg:flex">
+            {tools.map((t) => (
+              <ToolButton key={t.label} label={t.label} active={t.active} onClick={t.onClick}>
+                {t.icon}
+              </ToolButton>
+            ))}
           </div>
         </div>
 
@@ -381,7 +397,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
         {showInfo && (
           <div
             className="absolute right-4 z-30 max-w-xs border border-border bg-card p-4 shadow-sm md:right-6"
-            style={{ top: (panelPadTop ?? 16) + 52 }}
+            style={{ top: (toolbarPadTop ?? 16) + 52 }}
           >
             <Text variant="small" className="text-muted-foreground">
               {S.axis === "kolumn"
@@ -432,6 +448,63 @@ export default function Configurator({ initialState = initial, onBack }: { initi
               </div>
             </>
           )}
+        </div>
+
+        {/* mobil: verktygen hopfällda i nedre vänstra hörnet bakom en mer-knapp. Knapparna
+            fälls ut uppåt som en kolumn när man trycker; bakgrundsklick stänger menyn igen.
+            Knapparna är alltid monterade och tonas/glider med en transition (spring vid
+            öppning, mjuk in-easing vid stängning) så både ut- och infällning blir smidig.
+            Stäng-stegningen är omvänd så den närmast mer-knappen försvinner sist. */}
+        <div className="absolute bottom-4 left-4 z-20 lg:hidden">
+          {toolsOpen && (
+            <button
+              aria-hidden
+              tabIndex={-1}
+              onClick={() => setToolsOpen(false)}
+              className="fixed inset-0 -z-10 cursor-default"
+            />
+          )}
+          <div className="absolute bottom-full left-0 mb-2 flex flex-col-reverse items-start gap-2">
+            {tools.map((t, i) => (
+              <div
+                key={t.label}
+                style={{
+                  opacity: toolsOpen ? 1 : 0,
+                  transform: toolsOpen ? "none" : "translateY(12px) scale(0.7)",
+                  transformOrigin: "bottom left",
+                  pointerEvents: toolsOpen ? "auto" : "none",
+                  transition: toolsOpen
+                    ? "opacity 200ms ease-out, transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1)"
+                    : "opacity 160ms ease-in, transform 200ms cubic-bezier(0.4, 0, 1, 1)",
+                  // stegning: öppning nerifrån och upp, stängning uppifrån och ned
+                  transitionDelay: `${(toolsOpen ? i : tools.length - 1 - i) * 45}ms`,
+                }}
+              >
+                <ToolButton
+                  label={t.label}
+                  active={t.active}
+                  onClick={() => {
+                    t.onClick?.();
+                    if (!t.keepOpen) setToolsOpen(false);
+                  }}
+                >
+                  {t.icon}
+                </ToolButton>
+              </div>
+            ))}
+          </div>
+          <ToolButton
+            label={toolsOpen ? "Stäng verktyg" : "Fler verktyg"}
+            active={toolsOpen}
+            onClick={() => setToolsOpen((v) => !v)}
+          >
+            <span
+              className="transition-transform duration-base ease-default"
+              style={{ transform: toolsOpen ? "rotate(90deg)" : "none" }}
+            >
+              {toolsOpen ? <X size={18} /> : <MoreHorizontal size={18} />}
+            </span>
+          </ToolButton>
         </div>
       </section>
 
@@ -559,11 +632,11 @@ export default function Configurator({ initialState = initial, onBack }: { initi
     />
 
     {/* Fast köpribba – följer med över konfigurator + tillval, döljs vid summeringen.
-        Mobil: fast i botten (tummen når den, skymmer inte bilden). Desktop: fast i toppen. */}
+        Ligger fast i toppen på både mobil och desktop; glider upp ur vy när den döljs. */}
     <div
       ref={buyBarRef}
-      className={`fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card transition-transform duration-300 ease-out lg:bottom-auto lg:top-0 lg:border-b lg:border-t-0 ${
-        showBuyBar ? "translate-y-0" : "translate-y-full lg:-translate-y-full"
+      className={`fixed inset-x-0 top-0 z-40 border-b border-border bg-card transition-transform duration-300 ease-out ${
+        showBuyBar ? "translate-y-0" : "-translate-y-full"
       }`}
     >
       {/* remsan går kant till kant; innehållet hålls till max-bredden som sidhuvudet */}
@@ -1509,12 +1582,20 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
 }) {
   const shelfRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  // Första passningen (mount) sätter skalan från 1 → uträknad storlek. Utan detta animeras
+  // det språnget som en "zoom in-och-krymp" varje gång vyn öppnas. animate hålls false tills
+  // efter första målningen så inpassningen sker direkt; därefter animeras äkta ändringar
+  // (t.ex. när man ändrar storlek och hyllan skalas om för att rymmas) mjukt som förut.
+  const [animate, setAnimate] = useState(false);
   const reported = useRef({ x: 0, y: 0, w: 0, h: 0 });
   // Redigerar man ETT band (nivå 2) fryses bildens ram: ingen omzoomning och ingen
   // omflyttning av rummet. Bara det redigerade bandet ska ändras – annars känns det som
   // att hela bilden ändras för mycket vid varje val. När man går tillbaka till helheten
   // ställs ramen mjukt om till den nya passningen.
   const editing = active !== null;
+  // spegel av `editing` som den stabila ResizeObserver-closuren (satt upp en gång) kan läsa
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   // rapportera hyllans skalade rektangel (via getBoundingClientRect, inkl. transform) relativt wrap
   const reportRef = useRef<() => void>(() => {});
   reportRef.current = () => {
@@ -1547,20 +1628,31 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     reportRef.current();
   };
   // Fönster-/containerstorlek ändras → passa alltid in på nytt. Sätts upp en gång.
+  // Refitning här (mount + layout som sätter sig + fönsterresize) sker utan animation;
+  // bara användarens egna ändringar (nedan) animeras.
   useLayoutEffect(() => {
     const parent = shelfRef.current?.parentElement;
     if (!parent) return;
     measureRef.current();
-    const ro = new ResizeObserver(() => measureRef.current());
+    // Medan man redigerar ett band (nivå 2) är ramen fryst – hoppa över refit. Annars
+    // zoomar hyllan till när vyn byter layout (mobil: section blir `fixed`/100vw och
+    // scrollen låses → containerns bredd ändras → ny skala), vilket ser ryckigt ut.
+    const ro = new ResizeObserver(() => { if (!editingRef.current) measureRef.current(); });
     ro.observe(parent);
     return () => ro.disconnect();
   }, []);
   // Innehållsändring (bredd/höjd/kolumninnehåll) → passa in och rapportera – men INTE
   // medan man redigerar ett enskilt band. Då fryses ramen (se `editing` ovan). När man
   // lämnar redigeringen (editing → false) körs den och ställer om mjukt till ny passning.
+  // Första körningen är mount (layouten sätter sig, ingen animation önskas). Från och med
+  // första ÄKTA ändringen slås övergångar på så att omskalning (t.ex. ändrad storlek)
+  // glider mjukt istället för att animera zoom-in-och-krymp varje gång vyn öppnas.
+  const settled = useRef(false);
   useLayoutEffect(() => {
     if (editing) return;
     measureRef.current();
+    if (settled.current) setAnimate(true);
+    else settled.current = true;
   }, [S.cols, S.rows, S.colDefs, lift, editing]);
   // efter att ny scale committats reflekterar rect:en den – mät om (ej under redigering)
   useLayoutEffect(() => { if (!editing) reportRef.current(); }, [scale, lift, editing]);
@@ -1576,7 +1668,7 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     active === i ? "outline-ring" : hovered === i ? "outline-foreground/25" : "outline-transparent";
 
   return (
-    <div ref={shelfRef} className="flex flex-col gap-1.5 p-1.5 transition-[transform,background-color] duration-slow ease-default" style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, transform: `translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center" }}>
+    <div ref={shelfRef} className={`flex flex-col gap-1.5 p-1.5 ${animate ? "transition-[transform,background-color] duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, transform: `translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center" }}>
       {perCol ? (
         // TV-möbel: kolumner med egen höjd, golv-justerade. Varje kolumn är en egen stomme.
         <div className="flex items-end gap-1.5">
