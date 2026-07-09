@@ -12,7 +12,9 @@ const frameColor = (s: State) => (s.material === "ek" ? "#D8BC8E" : s.color === 
 // Bygger samma state som "Välj" öppnar (buildConfigState) och ritar möbeln med
 // konfiguratorns egna byggstenar (Cube/Legs) – statiskt, utan hover/redigering.
 export default function ConfigPreview({ config }: { config: Config }) {
-  const S = buildConfigState(config.category, {
+  // Handkodad layout vinner (matchar fotot exakt); annars byggs ett state från
+  // kategori + mått som förut.
+  const S = config.layout ?? buildConfigState(config.category, {
     style: config.style,
     material: config.material,
     color: config.color,

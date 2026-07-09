@@ -1,7 +1,7 @@
 // Data för Anamosa-seriesidan. Inline TS i samma stil som lib/config.ts – ingen JSON.
 // Copy i Mios ton (se Tonalitet.md): vänligt du-tilltal, kort och rakt.
 
-import type { Material, Front } from "@/lib/config";
+import { r, cellObj as x, type Material, type Front, type State, type Row } from "@/lib/config";
 
 /* ---------- Konfigurationer (karusell) ---------- */
 
@@ -17,6 +17,10 @@ export type Config = {
   discount: string;
   image?: string; // foto om det finns; annars renderas en förhandsvisning av bygget
   placeholder?: boolean; // true = inget foto än, kortet visar en renderad förhandsvisning
+  // Handkodat bygge som matchar fotot. Finns det ett layout öppnar "Välj" byggaren i
+  // exakt detta läge (i stället för kategorins generiska default) – se Studio och
+  // ConfigPreview. Byggs med lib/config-primitiverna r() och cellObj().
+  layout?: State;
   // Byggar-preset som "Välj" öppnar (se buildConfigState i lib/config.ts).
   category: string; // kategori-id i CATEGORIES
   style?: string; // stil-id i STYLES
@@ -36,14 +40,57 @@ export const CONFIG_FILTERS: ConfigType[] = [
   "Skåp & Vitringskåp",
 ];
 
+/* ---------- Bygge-layouter för foto-korten ---------- */
+// Varje layout är "översatt" från motsvarande foto: samma komposition av öppna fack,
+// luckor och lådor. Radmodellen kan inte göra en cell som är både 2-radig lucka och
+// öppet-över-lådor i samma kolumn, så höga luckor uttrycks som en h:80-rad och de
+// blir därför en nära approximation snarare än pixelperfekta.
+const layoutState = (over: Partial<State> & { rows: Row[] }): State => ({
+  cols: 4, mount: "staende", leg: "ek", material: "ek", color: "#C9A36A",
+  front: "plain", handle: "h1", style: null, ...over,
+});
+
+// Config 1 – ljus ek, helöppen bokhylla (4×4 öppna fack, några med hyllplan).
+const layout1: State = layoutState({
+  category: "hyllor", material: "ek", color: "#C9A36A", front: "plain",
+  rows: [
+    r({ h: 40, cells: [x("o", 1, "plain", 1), x("o", 1), x("o", 1), x("o", 1, "plain", 1)] }),
+    r({ h: 40, cells: [x("o", 1), x("o", 1), x("o", 1), x("o", 1)] }),
+    r({ h: 40, cells: [x("o", 1, "plain", 1), x("o", 1), x("o", 1), x("o", 1, "plain", 1)] }),
+    r({ h: 40, cells: [x("o", 1), x("o", 1), x("o", 1), x("o", 1)] }),
+  ],
+});
+
+// Config 2 – ek med ribbad lucka + lådor upptill, ribbad och slät storlucka nedtill.
+const layout2: State = layoutState({
+  category: "hyllor", material: "ek", color: "#C9A36A", front: "slats",
+  rows: [
+    r({ h: 40, cells: [x("o", 1, "plain", 1), x("o", 1), x("l", 1, "slats"), x("o", 1, "plain", 1)] }),
+    r({ h: 40, cells: [x("o", 1), x("o", 1), x("d", 1), x("o", 1)] }),
+    r({ h: 80, cells: [x("l", 1, "slats"), x("l", 1, "plain"), x("o", 1, "plain", 2), x("o", 1, "plain", 2)] }),
+  ],
+});
+
+// Config 3/4/5/6 – bred ribbad lucka upptill höger, ribbad + slät storlucka nedtill
+// vänster, lådor nedtill höger. Delas av de gröna/taupe korten (hylla resp. vitrin).
+const layoutC = (over: Partial<State> = {}): State => layoutState({
+  category: "hyllor", material: "laminat", color: "#5E7560", front: "slats",
+  rows: [
+    r({ h: 40, cells: [x("o", 1), x("o", 1), x("l", 2, "slats")] }),
+    r({ h: 40, cells: [x("o", 1), x("o", 1), x("o", 1), x("o", 1)] }),
+    r({ h: 80, cells: [x("l", 1, "slats"), x("l", 1, "plain"), x("d", 1), x("d", 1)] }),
+  ],
+  ...over,
+});
+
 export const CONFIGS: Config[] = [
-  { id: "1", name: "Konfiguration 1", dims: "162x45x79 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-1.png", category: "hyllor", style: "mosaik", material: "ek", color: "#C9A36A" },
-  { id: "2", name: "Konfiguration 2", dims: "165x38x83 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-2.png", category: "hyllor", style: "rytm", material: "ek", color: "#C9A36A", front: "slats" },
-  { id: "3", name: "Konfiguration 3", dims: "150x42x85 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-3.png", category: "hyllor", style: "kollage", material: "laminat", color: "#5E7560" },
-  { id: "4", name: "Konfiguration 4", dims: "160x44x80 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-4.png", category: "hyllor", style: "mosaik", material: "laminat", color: "#5E7560" },
+  { id: "1", name: "Konfiguration 1", dims: "162x45x79 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-1.png", category: "hyllor", style: "mosaik", material: "ek", color: "#C9A36A", layout: layout1 },
+  { id: "2", name: "Konfiguration 2", dims: "165x38x83 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-2.png", category: "hyllor", style: "rytm", material: "ek", color: "#C9A36A", front: "slats", layout: layout2 },
+  { id: "3", name: "Konfiguration 3", dims: "150x42x85 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-3.png", category: "hyllor", style: "kollage", material: "laminat", color: "#5E7560", layout: layoutC() },
+  { id: "4", name: "Konfiguration 4", dims: "160x44x80 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-4.png", category: "hyllor", style: "mosaik", material: "laminat", color: "#B3A998", layout: layoutC({ color: "#B3A998" }) },
   // De gröna med luckor fungerar även som skåp/vitrin – så filtret har något att visa.
-  { id: "5", name: "Konfiguration 5", dims: "150x42x85 cm", type: "Skåp & Vitringskåp", priceSale: "16.796:-", priceOrig: "23.995:-", discount: "-30%", image: "/series/config-3.png", category: "vitrin", material: "laminat", color: "#5E7560" },
-  { id: "6", name: "Konfiguration 6", dims: "160x44x80 cm", type: "Skåp & Vitringskåp", priceSale: "17.496:-", priceOrig: "24.995:-", discount: "-30%", image: "/series/config-4.png", category: "vitrin", material: "laminat", color: "#5E7560" },
+  { id: "5", name: "Konfiguration 5", dims: "150x42x85 cm", type: "Skåp & Vitringskåp", priceSale: "16.796:-", priceOrig: "23.995:-", discount: "-30%", image: "/series/config-3.png", category: "vitrin", material: "laminat", color: "#5E7560", layout: layoutC({ category: "vitrin" }) },
+  { id: "6", name: "Konfiguration 6", dims: "160x44x80 cm", type: "Skåp & Vitringskåp", priceSale: "17.496:-", priceOrig: "24.995:-", discount: "-30%", image: "/series/config-4.png", category: "vitrin", material: "laminat", color: "#B3A998", layout: layoutC({ category: "vitrin", color: "#B3A998" }) },
 
   // Genererade konfigurationer för produkttyper utan foto. "Välj" öppnar rätt kategori
   // i byggaren och kortet visar en renderad förhandsvisning av just detta bygge
