@@ -27,18 +27,6 @@ const initial: State = {
 };
 initial.rows = applyStyle("mosaik", initial.cols, initial.rows);
 
-// Hjälptexter bakom frågetecknet vid varje sektionsrubrik – öppnas i en popover.
-const HELP = {
-  stil: "Stilarna är färdiga kompositioner av öppna fack, luckor och lådor. Välj en som utgångspunkt och finjustera sedan fritt – de rader eller kolumner du redigerat själv behålls.",
-  storlek: "Bredden byggs i moduler om 40 cm och höjden i steg om 20 cm. Måttet i rutan är möbelns verkliga yttermått.",
-  storlekTv: "Bredden byggs i moduler om 40 cm. Höjden gäller alla kolumner som inte fått en egen höjd – ge en sektion egen höjd under Redigera, t.ex. en lägre del för TV:n.",
-  montering: "Stående möbler vilar på ben som du väljer nedan. Väggmonterad hängs upp och svävar fritt ovanför golvet – ett luftigare uttryck som är lätt att städa under.",
-  ben: "Alla ben passar alla byggen och lyfter möbeln en bit från golvet. Trä ger en varm, klassisk känsla – metall ett lättare, modernare uttryck.",
-  material: "Massiv ek är ett levande naturmaterial – ådring och ton varierar från planka till planka, och den oljade ytan tål vardagen och kan slipas om. Laminat har en tålig, lättskött yta med jämn kulör och är det prisvänligare valet. Stommen och kvaliteten är densamma oavsett material.",
-  front: "Slät front ger ett lugnt, minimalistiskt uttryck. Ribbor lägger till textur och skuggspel. Glas låter innehållet synas – glasfronter sitter alltid på luckor.",
-  handtag: "Beslagen sätter karaktären på fronterna. Knoppar i trä eller mässing, avlångt bygelhandtag – eller push-open helt utan handtag, där luckan öppnas med ett lätt tryck.",
-} as const;
-
 const lum = (hex: string) => {
   const c = hex.replace("#", "");
   return (0.299 * parseInt(c.slice(0, 2), 16) + 0.587 * parseInt(c.slice(2, 4), 16) + 0.114 * parseInt(c.slice(4, 6), 16)) / 255;
@@ -53,7 +41,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const [hovered, setHovered] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   // hyllans faktiska (skalade) rektangel relativt wrapRef – förankrar lägg-till-knapparna
-  const [stage, setStage] = useState({ x: 0, y: 0, w: 0, h: 0 });
+  const [stage, setStage] = useState<Stage>({ x: 0, y: 0, w: 0, h: 0, glide: false });
   const [showDims, setShowDims] = useState(false);
   // rumsdekoren (växt + lampa) är avstängd som standard – den slås på via "Visa miljö".
   const [showScene, setShowScene] = useState(false);
@@ -426,21 +414,21 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           </div>
           {stage.w > 0 && (
             <>
-              <AddButton className="-translate-x-1/2 translate-y-[calc(-100%-24px)]" style={{ left: stage.x + stage.w / 2, top: stage.y }} label="Lägg till rad" onClick={() => setRows(S.rows.length + 1)} />
-              <AddButton className="-translate-y-1/2 translate-x-6" style={{ left: stage.x + stage.w, top: stage.y + stage.h / 2 }} label="Lägg till kolumn" onClick={() => setCols(S.cols + 1)} />
+              <AddButton className="-translate-x-1/2 translate-y-[calc(-100%-24px)]" style={{ left: stage.x + stage.w / 2, top: stage.y, transition: stageMove(stage.glide, "left", "top") }} label="Lägg till rad" onClick={() => setRows(S.rows.length + 1)} />
+              <AddButton className="-translate-y-1/2 translate-x-6" style={{ left: stage.x + stage.w, top: stage.y + stage.h / 2, transition: stageMove(stage.glide, "left", "top") }} label="Lägg till kolumn" onClick={() => setCols(S.cols + 1)} />
             </>
           )}
           {showDims && stage.w > 0 && (
             <>
               {/* bredd – under hyllan */}
-              <div className="pointer-events-none absolute z-10" style={{ left: stage.x, top: stage.y + stage.h + 16, width: stage.w }}>
+              <div className="pointer-events-none absolute z-10" style={{ left: stage.x, top: stage.y + stage.h + 16, width: stage.w, transition: stageMove(stage.glide, "left", "top", "width") }}>
                 <div className="h-px w-full bg-foreground/40" />
                 <span className="absolute left-0 top-0 h-3 w-px -translate-y-1/2 bg-foreground/40" />
                 <span className="absolute right-0 top-0 h-3 w-px -translate-y-1/2 bg-foreground/40" />
                 <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 border border-border bg-card px-2 py-0.5 text-xs font-semibold">{widthCm} cm</span>
               </div>
               {/* höjd – till vänster om hyllan */}
-              <div className="pointer-events-none absolute z-10" style={{ left: stage.x - 16, top: stage.y, height: stage.h }}>
+              <div className="pointer-events-none absolute z-10" style={{ left: stage.x - 16, top: stage.y, height: stage.h, transition: stageMove(stage.glide, "left", "top", "height") }}>
                 <div className="h-full w-px bg-foreground/40" />
                 <span className="absolute left-0 top-0 h-px w-3 -translate-x-1/2 bg-foreground/40" />
                 <span className="absolute left-0 bottom-0 h-px w-3 -translate-x-1/2 bg-foreground/40" />
@@ -531,7 +519,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           )}
           {/* Grundvalen: alltid i DOM på mobil (overlayn läggs ovanpå), döljs på desktop under redigering. */}
           <div key="lvl1" className={`panel-enter-left ${active !== null ? "lg:hidden" : ""}`}>
-          <PanelSection title="Stil" help={HELP.stil}>
+          <PanelSection title="Stil">
             <StylePicker S={S} onPick={pickStyle} />
             <SelectionCopy
               title={curStyle?.name ?? "Mosaik"}
@@ -539,7 +527,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             />
           </PanelSection>
 
-          <PanelSection title="Storlek" help={perColHeight ? HELP.storlekTv : HELP.storlek}>
+          <PanelSection title="Storlek">
             <Range label="Bredd" value={S.cols} max={COLMAX} pill={`${widthCm} cm`} onSet={setCols} />
             {perColHeight ? (
               <Range label="Höjd" value={S.rows.length} max={ROWMAX} pill={`${cellsToCm(S.rows.length)} cm`} onSet={setRows} />
@@ -548,7 +536,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             )}
           </PanelSection>
 
-          <PanelSection title="Montering" help={HELP.montering}>
+          <PanelSection title="Montering">
             <ButtonGroup
               options={[
                 ["staende", "Stående"],
@@ -560,13 +548,13 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           </PanelSection>
 
           {S.mount === "staende" && (
-            <PanelSection title="Ben" help={HELP.ben}>
+            <PanelSection title="Ben">
               <LegPicker value={S.leg} onSet={(v) => set({ leg: v })} />
               <SelectionCopy title={curLeg[1]} desc={curLeg[2]} />
             </PanelSection>
           )}
 
-          <PanelSection title="Material" help={HELP.material}>
+          <PanelSection title="Material">
             <ButtonGroup
               className="mb-5"
               options={[
@@ -581,14 +569,14 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           </PanelSection>
 
           {hasFronts(S) && (
-            <PanelSection title="Frontstil" help={HELP.front}>
+            <PanelSection title="Frontstil">
               <FrontPicker value={S.front} onSet={(front) => setS((s) => ({ ...s, front, rows: s.rows.map((row) => ({ ...row, front, cells: row.cells?.map((c) => ({ ...c, front })) })) }))} />
               <SelectionCopy title={FRONT_LABEL[S.front]} desc={frontDescription(S.front)} />
             </PanelSection>
           )}
 
           {hasFronts(S) && (
-            <PanelSection title="Beslag" help={HELP.handtag}>
+            <PanelSection title="Beslag">
               <HandlePicker options={validHandles} value={handleId} onSet={(v) => set({ handle: v })} />
               <SelectionCopy title={curHandle[1]} desc={curHandle[2]} />
             </PanelSection>
@@ -716,7 +704,7 @@ function Summary({
 }) {
   // egen mätning av hyllans rektangel för att placera scenens golv (som i förhandsvisningen).
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [stage, setStage] = useState({ x: 0, y: 0, w: 0, h: 0 });
+  const [stage, setStage] = useState<Stage>({ x: 0, y: 0, w: 0, h: 0, glide: false });
   // valt leveransalternativ (ömsesidigt uteslutande, kan avmarkeras).
   const [delivery, setDelivery] = useState<DeliveryKey | null>(null);
   // väggmonterad: hyllan lyfts upp på väggen (golvet står kvar) som i förhandsvisningen
@@ -959,33 +947,11 @@ function CartRow({ thumb, name, desc, price, onRemove, qty, onInc, onDec }: {
 
 /* ---------- panel UI ---------- */
 
-// help: true visar bara frågetecknet; en sträng gör knappen levande – texten öppnas
-// i en popover förankrad vid rubriken.
-export function PanelSection({ title, help = false, children }: { title: string; help?: boolean | string; children?: React.ReactNode }) {
-  const [helpOpen, setHelpOpen] = useState(false);
-  const hasHelpText = typeof help === "string";
+export function PanelSection({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <section className="mt-10 first:mt-8 lg:mt-16 lg:first:mt-0">
-      <div className="relative mb-4 flex items-center justify-between gap-4 lg:mb-5">
+      <div className="mb-4 lg:mb-5">
         <Heading level="h2" className="text-[22px] leading-none lg:text-[2rem]">{title}</Heading>
-        {help && (
-          <button
-            type="button"
-            aria-label={`Hjälp för ${title}`}
-            aria-expanded={hasHelpText ? helpOpen : undefined}
-            onClick={() => hasHelpText && setHelpOpen((v) => !v)}
-            className={`flex h-8 w-8 items-center justify-center rounded-full border font-body text-base font-semibold leading-none transition-colors duration-base ease-default ${
-              helpOpen ? "border-primary bg-primary text-primary-foreground" : "border-foreground/60 text-foreground hover:border-foreground"
-            }`}
-          >
-            ?
-          </button>
-        )}
-        {hasHelpText && helpOpen && (
-          <div className="copy-enter absolute right-0 top-full z-30 mt-2 w-72 max-w-full border border-border bg-card p-4 shadow-sm">
-            <Text variant="small" className="text-muted-foreground">{help}</Text>
-          </div>
-        )}
       </div>
       {children}
     </section>
@@ -1408,11 +1374,15 @@ function ToolButton({ label, active = false, onClick, children }: {
 }
 
 function AddButton({ style, className = "", label, onClick }: { style: React.CSSProperties; className?: string; label: string; onClick: () => void }) {
+  // Knappen placeras från hyllans rektangel via inline left/top. En inline `transition`
+  // slår ut klassens färgövergång, så ramfärgen måste in i samma sträng.
+  const transition = [style.transition, "border-color 250ms cubic-bezier(0.4, 0, 0.2, 1)"]
+    .filter((t) => t && t !== "none").join(", ");
   return (
     <button
       onClick={onClick}
-      style={style}
-      className={`group absolute z-10 flex h-10 items-center overflow-hidden border border-border bg-card rounded-button transition-colors duration-base hover:border-primary ${className}`}
+      style={{ ...style, transition }}
+      className={`group absolute z-10 flex h-10 items-center overflow-hidden border border-border bg-card rounded-button hover:border-primary ${className}`}
     >
       <span className="flex h-9 w-9 items-center justify-center"><Plus size={18} /></span>
       <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm font-semibold opacity-0 transition-all duration-base group-hover:max-w-[180px] group-hover:pr-4 group-hover:opacity-100">
@@ -1422,20 +1392,33 @@ function AddButton({ style, className = "", label, onClick }: { style: React.CSS
   );
 }
 
+// Hyllans rapporterade rektangel (relativt wrap). `glide` säger om hyllan FLYTTAR SIG mjukt
+// dit (transform-transition, t.ex. väggmontering eller omskalning) eller snäpper direkt
+// (layoutbyte, t.ex. ny rad). Allt som placeras från rektangeln – scenen, plus-knapparna,
+// måttlinjerna – följer den flaggan och rör sig därför i takt med hyllan istället för att
+// halka efter.
+export interface Stage { x: number; y: number; w: number; h: number; glide: boolean }
+// samma tajming som hyllans egen transform-transition (duration-slow / ease-default)
+const STAGE_T = "350ms cubic-bezier(0.4, 0, 0.2, 1)";
+const stageMove = (glide: boolean, ...props: string[]) =>
+  glide ? props.map((x) => `${x} ${STAGE_T}`).join(", ") : "none";
+
 /* ---------- scen: golv, vägg, skuggor och enkel rumsdekor (växt + lampa) ---------- */
 function Scene({ stage, floorY, plantPx, plantLeft, lampPx, lampLeft, showRoom, lift = 0 }: {
-  stage: { x: number; y: number; w: number; h: number };
+  stage: Stage;
   floorY: number; plantPx: number; plantLeft: number; lampPx: number; lampLeft: number; showRoom: boolean;
   // hyllan hänger `lift` px ovanför golvlinjen (väggmonterad) – skuggan mjukas upp
   lift?: number;
 }) {
   const cx = stage.x + stage.w / 2;
-  // Golv, vägg, skuggor och dekor förankras alla i hyllans mätta rektangel / golvlinjen.
-  // Hyllan själv glider (transform-transition) när monteringen växlar (lyft) eller mått
-  // ändras – låt scenen glida med samma tajming istället för att snäppa, annars ser det
-  // ut som att bilden "hoppar" när allt utom hyllan teleporterar sig.
-  const T = "350ms cubic-bezier(0.4,0,0.2,1)";
-  const move = (...props: string[]) => props.map((p) => `${p} ${T}`).join(", ");
+  // Golv, vägg, skuggor och dekor förankras alla i hyllans rektangel / golvlinjen och måste
+  // röra sig EXAKT som hyllan – annars läser man skuggan som slarvig.
+  //  • Hyllan glider (transform-transition: väggmontering, omskalning) → scenen glider med
+  //    samma tajming och hamnar i takt.
+  //  • Hyllan snäpper (layoutbyte: ny rad/kolumn ändrar layoutmåttet, vilket inte kan
+  //    animeras) → scenen måste snäppa också. Animerade vi här skulle skuggan glida 350 ms
+  //    efter en hylla som redan är framme. Det var den efterhalkande skuggan.
+  const move = (...props: string[]) => stageMove(stage.glide, ...props);
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" style={{ zIndex: 0 }}>
       {/* vägg (togglas) */}
@@ -1457,7 +1440,7 @@ function Scene({ stage, floorY, plantPx, plantLeft, lampPx, lampLeft, showRoom, 
       )}
       {/* kontaktskugga mot golvet (alltid – förankrar hyllan). Väggmonterad: mjukare,
           diffusare skugga eftersom hyllan hänger en bit ovanför golvet. */}
-      <div className="absolute" style={{ left: cx - (stage.w * 1.04) / 2, top: floorY - 6, width: stage.w * 1.04, height: 20, background: `radial-gradient(ellipse at center, rgba(0,0,0,${lift > 0 ? 0.1 : 0.22}) 0%, transparent 72%)`, filter: lift > 0 ? "blur(5px)" : "blur(2px)", transition: move("left", "top", "width") + `, filter ${T}` }} />
+      <div className="absolute" style={{ left: cx - (stage.w * 1.04) / 2, top: floorY - 6, width: stage.w * 1.04, height: 20, background: `radial-gradient(ellipse at center, rgba(0,0,0,${lift > 0 ? 0.1 : 0.22}) 0%, transparent 72%)`, filter: lift > 0 ? "blur(5px)" : "blur(2px)", transition: move("left", "top", "width", "filter") }} />
     </div>
   );
 }
@@ -1576,7 +1559,7 @@ export function MiniShelf({ rows, cols }: { rows: Row[]; cols: number }) {
 function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, onMeasure, lift = 0 }: {
   S: State; handleId: string; frame: string; active: number | null; hovered: number | null;
   onHover: (i: number | null) => void; onOpen: (i: number) => void;
-  wrapRef: React.RefObject<HTMLDivElement>; onMeasure: (r: { x: number; y: number; w: number; h: number }) => void;
+  wrapRef: React.RefObject<HTMLDivElement>; onMeasure: (r: Stage) => void;
   // px som hyllan lyfts från golvlinjen (väggmonterad hänger på väggen)
   lift?: number;
 }) {
@@ -1596,17 +1579,38 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
   // spegel av `editing` som den stabila ResizeObserver-closuren (satt upp en gång) kan läsa
   const editingRef = useRef(editing);
   editingRef.current = editing;
-  // rapportera hyllans skalade rektangel (via getBoundingClientRect, inkl. transform) relativt wrap
+  // Senast rapporterade transform – avgör om nästa rapport beror på att hyllan FLYTTAR SIG
+  // (scale/lift ändras → transform-transition) eller på att den byter layout (rad/kolumn
+  // läggs till → snäpper direkt). Scenen ska glida i det första fallet och snäppa i det andra.
+  const lastTf = useRef({ scale, lift });
+  // Rapportera hyllans skalade rektangel relativt wrap – scenen (golv, skugga, dekor),
+  // plus-knapparna och måttlinjerna placeras alla från den.
+  //
+  // Rektangeln RÄKNAS UT, den mäts inte med getBoundingClientRect på hyllan. Anledningen:
+  // rect:en innehåller transformen, och under en pågående transform-transition returnerar
+  // den det interpolerade värdet – alltså läget hyllan är i just nu, inte det den är på väg
+  // till. Väntar man i stället på transitionend kommer målet 350 ms för sent och skuggan
+  // halkar efter hela vägen. Vi känner målet direkt: containern är otransformerad, och
+  // scale/lift är vårt eget state.
   const reportRef = useRef<() => void>(() => {});
   reportRef.current = () => {
-    const el = shelfRef.current, wrap = wrapRef.current;
-    if (!el || !wrap) return;
-    const er = el.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
-    const next = { x: er.left - wr.left, y: er.top - wr.top, w: er.width, h: er.height };
+    const el = shelfRef.current, wrap = wrapRef.current, parent = el?.parentElement;
+    if (!el || !wrap || !parent) return;
+    const pr = parent.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+    const cs = getComputedStyle(parent);
+    const w = el.offsetWidth * scale, h = el.offsetHeight * scale;
+    // transform-origin är "bottom center": scale håller underkanten still vid layoutens
+    // underkant (content-boxens nederkant, items-end) och translateY lyfter den `lift` px.
+    const bottom = pr.bottom - wr.top - parseFloat(cs.paddingBottom) - lift;
+    const padL = parseFloat(cs.paddingLeft), padR = parseFloat(cs.paddingRight);
+    const cx = pr.left - wr.left + padL + (parent.clientWidth - padL - padR) / 2;
+    const next = { x: cx - w / 2, y: bottom - h, w, h };
     const p = reported.current;
     if (Math.abs(p.x - next.x) > 0.5 || Math.abs(p.y - next.y) > 0.5 || Math.abs(p.w - next.w) > 0.5 || Math.abs(p.h - next.h) > 0.5) {
       reported.current = next;
-      onMeasure(next);
+      const glide = animate && (lastTf.current.scale !== scale || lastTf.current.lift !== lift);
+      lastTf.current = { scale, lift };
+      onMeasure({ ...next, glide });
     }
   };
   // Stabil mätfunktion (senaste closure) så ResizeObservern kan sättas upp en gång.
@@ -1624,7 +1628,31 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     const pw = parent.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - BTN * 2;
     // hyllan skalas likadant oavsett montering – väggmontering flyttar bara golvet, inte hyllan
     const ph = parent.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - BTN;
-    setScale(Math.min(1, pw / el.offsetWidth, ph / el.offsetHeight));
+    // Skalan sätts av RAMEN, inte av det aktuella bygget: vi väljer den skala där
+    // MAXBYGGET (6 × 6 moduler) precis ryms, och ritar alla bygg i den. Rummet får
+    // alltså ett fast "kameraavstånd" per skärmstorlek. Två konsekvenser, båda önskade:
+    //  • Stor skärm → stor ram → stor möbel. Bilden växer med viewporten i stället för
+    //    att toppa vid 1:1 och lägga sig som en liten möbel i nederkanten.
+    //  • Storleken i bild speglar den verkliga storleken. En låg hylla ser låg ut, och
+    //    när man lägger till en rad VÄXER hyllan uppåt i ramen i stället för att hela
+    //    vyn zoomar om. Luften ovanför hyllan är alltså inte slack – det är utrymmet
+    //    kvar att bygga på.
+    // Referensen är maxbygget, inte ett "typiskt" bygg – bara då gäller skalan hela
+    // storleksregistret och alla bygg kan jämföras mot varandra.
+    const GAP = 6, PAD = 6, LEG = 18; // gap-1.5 / p-1.5 / benens höjd
+    const refW = COLMAX * U + PAD * 2;
+    const refH = ROWMAX * U + (ROWMAX - 1) * GAP + PAD * 2 + (LEG + GAP);
+    const ref = Math.min(pw / refW, ph / refH);
+    // Två spärrar runt referensskalan:
+    //  • Math.max(1, …): i en knapp ram (mobilens 50svh, liten laptop) ryms maxbygget
+    //    bara i miniatyr, och då skulle ETT bygg ritas som ett frimärke. Under 1:1 faller
+    //    vi därför tillbaka på det gamla beteendet – fyll ramen. Storlekstroheten gäller
+    //    alltså överallt där den inte kostar för mycket, och kostar aldrig något.
+    //  • Inpassningen (de två sista termerna) är skyddsnätet: bygget ska aldrig spilla
+    //    ut ur ramen, oavsett skala.
+    // golv på 0.05: en dold/kollapsad container ger negativa mått – utan golvet skulle
+    // skalan (och --inv nedan) bli meningslös.
+    setScale(Math.max(0.05, Math.min(Math.max(1, ref), pw / el.offsetWidth, ph / el.offsetHeight)));
     reportRef.current();
   };
   // Fönster-/containerstorlek ändras → passa alltid in på nytt. Sätts upp en gång.
@@ -1637,8 +1665,12 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     // Medan man redigerar ett band (nivå 2) är ramen fryst – hoppa över refit. Annars
     // zoomar hyllan till när vyn byter layout (mobil: section blir `fixed`/100vw och
     // scrollen låses → containerns bredd ändras → ny skala), vilket ser ryckigt ut.
+    // Observera både ramen (fönsterresize) och hyllan (dess layoutmått ändras när rader/
+    // kolumner tillkommer). ResizeObserver rapporterar content-box och påverkas därför
+    // inte av transformen – ingen risk att en pågående omskalning triggar en loop.
     const ro = new ResizeObserver(() => { if (!editingRef.current) measureRef.current(); });
     ro.observe(parent);
+    if (shelfRef.current) ro.observe(shelfRef.current);
     return () => ro.disconnect();
   }, []);
   // Innehållsändring (bredd/höjd/kolumninnehåll) → passa in och rapportera – men INTE
@@ -1654,7 +1686,9 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     if (settled.current) setAnimate(true);
     else settled.current = true;
   }, [S.cols, S.rows, S.colDefs, lift, editing]);
-  // efter att ny scale committats reflekterar rect:en den – mät om (ej under redigering)
+  // Ny scale/lift committad → rapportera det nya MÅLET direkt (se reportRef ovan). Scenen
+  // får samma tajming som hyllans transform-transition och glider därför i takt med den,
+  // istället för att starta när hyllan redan är framme.
   useLayoutEffect(() => { if (!editing) reportRef.current(); }, [scale, lift, editing]);
 
   const grid = gridCells(S);
@@ -1668,7 +1702,7 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     active === i ? "outline-ring" : hovered === i ? "outline-foreground/25" : "outline-transparent";
 
   return (
-    <div ref={shelfRef} className={`flex flex-col gap-1.5 p-1.5 ${animate ? "transition-[transform,background-color] duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, transform: `translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center" }}>
+    <div ref={shelfRef} className={`flex flex-col gap-1.5 p-1.5 ${animate ? "transition-[transform,background-color] duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, transform: `translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / scale }}>
       {perCol ? (
         // TV-möbel: kolumner med egen höjd, golv-justerade. Varje kolumn är en egen stomme.
         <div className="flex items-end gap-1.5">
@@ -1734,13 +1768,16 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
 // "Redigera"-knapp som bara tänds på bandet vid hover (desktop). På touch/mobil används
 // tabbarna i panelen för att välja band – därför ingen forcerad hover-knapp där. Aktivt band
 // markeras enbart med ringen, annars ser det aktiva bandet ut som att det hovras.
+// Pillret ligger inuti hyllans skalning men är gränssnitt, inte möbel: --inv (satt på
+// hyllan) skalar tillbaka det så texten är lika stor oavsett hur stor hyllan ritas.
 function EditPill({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
       aria-label="Redigera bandet"
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className="pointer-events-auto absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 whitespace-nowrap border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground shadow-sm rounded-button opacity-0 transition-opacity duration-fast group-hover:opacity-100"
+      style={{ transform: "translate(-50%, -50%) scale(var(--inv, 1))" }}
+      className="pointer-events-auto absolute left-1/2 top-1/2 z-20 flex items-center gap-1.5 whitespace-nowrap border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground shadow-sm rounded-button opacity-0 transition-opacity duration-fast group-hover:opacity-100"
     >
       <Pencil size={14} /> Redigera
     </button>
