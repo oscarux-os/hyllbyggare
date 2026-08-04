@@ -23,8 +23,12 @@ export default function Valmojligheter() {
   const [front, setFront] = useState<string>(FRONT[0]);
   const [beslag, setBeslag] = useState<string>(BESLAG[0]);
 
+  // grid-cols-1 är inte överflödigt: utan explicit spårdefinition blir det implicita
+  // spåret `auto` = max-content, och då blåser swatch-raden (10 färger, ~430 px) upp
+  // sektionen bredare än mobilens viewport – sidan kunde zoomas ut. minmax(0,1fr)
+  // håller spåret inom ramen så overflow-x-auto på raderna får göra sitt jobb.
   return (
-    <section id="valmojligheter" className="mx-auto grid max-w-[1200px] gap-10 px-2 py-12 md:grid-cols-2 md:items-center md:px-6 md:py-16 scroll-mt-6">
+    <section id="valmojligheter" className="mx-auto grid max-w-[1200px] grid-cols-1 gap-10 px-2 py-12 md:grid-cols-2 md:items-center md:px-6 md:py-16 scroll-mt-6">
       <div className="flex flex-col gap-6">
         <Heading level="display-sm" as="h2">Valmöjligheter</Heading>
 

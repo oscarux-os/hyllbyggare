@@ -23,6 +23,15 @@ function configFromParam(id: string | null): State | null {
   });
 }
 
+// Kom vi hit via en klientnavigering inifrån appen, eller laddades dokumentet direkt
+// på /bygg? Navigation Timing-posten pekar på den URL dokumentet laddades med och
+// följer inte med när Next byter sida i klienten – skiljer den sig från nuvarande URL
+// finns det alltså en egen sida bakåt i historiken.
+function arrivedFromInsideApp() {
+  const [nav] = performance.getEntriesByType("navigation");
+  return nav ? nav.name !== window.location.href : false;
+}
+
 export default function Studio() {
   const params = useSearchParams();
   const router = useRouter();
@@ -36,6 +45,11 @@ export default function Studio() {
   });
   if (!config)
     return <TypePicker onPick={(s) => { fromSeries.current = false; setConfig(s); }} />;
-  const onBack = fromSeries.current ? () => router.back() : () => setConfig(null);
+  // router.back() är bara rätt om vi kom hit inifrån appen – annars skickar Tillbaka
+  // den som djuplänkat rakt in i byggaren ut från sajten. arrivedFromInsideApp()
+  // skiljer fallen åt; vid direktbesök går vi i stället till seriesidan.
+  const onBack = fromSeries.current
+    ? () => (arrivedFromInsideApp() ? router.back() : router.push("/anamosa"))
+    : () => setConfig(null);
   return <Configurator initialState={config} onBack={onBack} />;
 }
