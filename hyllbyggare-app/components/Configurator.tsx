@@ -41,7 +41,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const [hovered, setHovered] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   // hyllans faktiska (skalade) rektangel relativt wrapRef – förankrar lägg-till-knapparna
-  const [stage, setStage] = useState<Stage>({ x: 0, y: 0, w: 0, h: 0, glide: false });
+  const [stage, setStage] = useState<Stage>(NO_STAGE);
   const [showDims, setShowDims] = useState(false);
   // rumsdekoren (växt + lampa) är avstängd som standard – den slås på via "Visa miljö".
   const [showScene, setShowScene] = useState(false);
@@ -189,7 +189,9 @@ export default function Configurator({ initialState = initial, onBack }: { initi
     });
 
   // Öppna nivå 2 för ett band. Redigeringen sker nu i panelen (ingen flytande popover).
-  const openBand = (i: number) => setActive(i);
+  // Den hopfällda verktygsmenyn (mobil) stängs samtidigt – den göms i nivå 2 och ska inte
+  // stå kvar öppen när man kommer tillbaka till helheten.
+  const openBand = (i: number) => { setActive(i); setToolsOpen(false); };
   const backToLevel1 = () => setActive(null);
 
   // När man går in i bandredigering (nivå 2) kan man redan ha scrollat långt ner förbi den
@@ -251,9 +253,10 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const toolbarPadTop = barH > 0 ? barH + (isLg ? 24 : 12) : undefined;
   const panelPadTop = isLg && barH > 0 ? barH + 24 : undefined;
 
-  // Redigeringsläget (nivå 2) nås genom att klicka på en rad/kolumn i bilden. Väl inne
-  // stegar man mellan banden med steppern i panelhuvudet. Att lägga till en rad/kolumn
-  // sker via "Lägg till"-knapparna i förhandsvisningen – därför ingen +-knapp i steppern.
+  // Redigeringsläget (nivå 2) nås genom att klicka på en rad/kolumn i bilden. Bilden zoomar
+  // då in på det bandet, och man stegar mellan banden med steppern i panelhuvudet. Att lägga
+  // till en rad/kolumn sker via "Lägg till"-knapparna i helhetsvyn (de göms i det inzoomade
+  // läget) – därför ingen +-knapp i steppern.
 
   const validHandles = HANDLES;
   const handleId = validHandles.some((h) => h[0] === S.handle) ? S.handle : validHandles[0][0];
@@ -264,6 +267,17 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const widthCm = realW(S.cols);
   const colHeights = S.axis === "kolumn" ? Array.from({ length: S.cols }, (_, ci) => colHeight(S, ci)) : [];
   const heightCm = perColHeight ? cellsToCm(Math.max(1, ...colHeights)) : realH(S.rows);
+  // Mått för det inzoomade bandet (nivå 2). Rad: möbelns bredd × radens höjd. Kolumn: en
+  // modulbredd × kolumnens höjd. null → helhetens mått (nivå 1).
+  const bandDims = (() => {
+    if (active === null || !stage.band) return null;
+    if (S.axis === "kolumn")
+      return active < S.cols
+        ? { rect: stage.band, width: `${realW(1)} cm`, height: `${perColHeight ? cellsToCm(colHeights[active]) : heightCm} cm` }
+        : null;
+    const row = S.rows[active];
+    return row ? { rect: stage.band, width: `${widthCm} cm`, height: `${row.h} cm` } : null;
+  })();
   let closed = 0;
   allCells(S).forEach((c) => c.type !== "o" && (closed += c.span));
   const priceNum =
@@ -285,9 +299,11 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   // nedan så den ligger kvar på samma plats (annars skulle golvet följa med uppåt).
   const lift = S.mount === "vagg" ? 40 : 0;
   // skala miljön efter hyllans verkliga höjd: golvlinjen ligger vid hyllans bas
-  // (+ lyftet när hyllan hänger – golvet ska ligga kvar även när hyllan skjuts upp)
+  // (+ lyftet när hyllan hänger – golvet ska ligga kvar även när hyllan skjuts upp).
+  // Lyftet är i hyllans egna pixlar, så det måste följa kamerans inzoomning (stage.z) –
+  // annars glider golvet ur läge när bilden zoomar in på ett band i en väggmonterad hylla.
   const pxPerCm = stage.h > 0 && heightCm > 0 ? stage.h / heightCm : 0;
-  const floorY = stage.y + stage.h + lift;
+  const floorY = stage.y + stage.h + lift * stage.z;
   // dekor för att antyda ett rum och ge skala – växt till vänster, golvlampa till höger
   const plantPx = pxPerCm * 130;
   const plantW = plantPx * (100 / 300);
@@ -394,29 +410,25 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             {/* hyllan bottenankras 120px från nederkanten och växer uppåt */}
             <Shelf S={S} handleId={handleId} frame={frameColor()} active={active} hovered={hovered} onHover={setHovered} onOpen={openBand} wrapRef={wrapRef} onMeasure={setStage} lift={lift} />
           </div>
-          {stage.w > 0 && (
+          {/* Lägg-till-knapparna gäller hela möbeln och göms medan bilden är inzoomad på ett
+              band (nivå 2) – där skulle de dessutom ligga utanför bild. Man lägger till rader
+              och kolumner i helhetsvyn, ett klick bort via "Gå tillbaka". */}
+          {stage.w > 0 && active === null && (
             <>
               <AddButton className="-translate-x-1/2 translate-y-[calc(-100%-24px)]" style={{ left: stage.x + stage.w / 2, top: stage.y, transition: stageMove(stage.glide, "left", "top") }} label="Lägg till rad" onClick={() => setRows(S.rows.length + 1)} />
               <AddButton className="-translate-y-1/2 translate-x-6" style={{ left: stage.x + stage.w, top: stage.y + stage.h / 2, transition: stageMove(stage.glide, "left", "top") }} label="Lägg till kolumn" onClick={() => setCols(S.cols + 1)} />
             </>
           )}
+          {/* Måttlinjer: hela möbeln i helhetsvyn – det inzoomade bandets egna mått i nivå 2.
+              Samma komponent i båda fallen, så linjerna GLIDER mellan helheten och bandet i
+              takt med kameran istället för att hoppa. */}
           {showDims && stage.w > 0 && (
-            <>
-              {/* bredd – under hyllan */}
-              <div className="pointer-events-none absolute z-10" style={{ left: stage.x, top: stage.y + stage.h + 16, width: stage.w, transition: stageMove(stage.glide, "left", "top", "width") }}>
-                <div className="h-px w-full bg-foreground/40" />
-                <span className="absolute left-0 top-0 h-3 w-px -translate-y-1/2 bg-foreground/40" />
-                <span className="absolute right-0 top-0 h-3 w-px -translate-y-1/2 bg-foreground/40" />
-                <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 border border-border bg-card px-2 py-0.5 text-xs font-semibold">{widthCm} cm</span>
-              </div>
-              {/* höjd – till vänster om hyllan */}
-              <div className="pointer-events-none absolute z-10" style={{ left: stage.x - 16, top: stage.y, height: stage.h, transition: stageMove(stage.glide, "left", "top", "height") }}>
-                <div className="h-full w-px bg-foreground/40" />
-                <span className="absolute left-0 top-0 h-px w-3 -translate-x-1/2 bg-foreground/40" />
-                <span className="absolute left-0 bottom-0 h-px w-3 -translate-x-1/2 bg-foreground/40" />
-                <span className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap border border-border bg-card px-2 py-0.5 text-xs font-semibold">{heightCm} cm</span>
-              </div>
-            </>
+            <Dims
+              rect={bandDims?.rect ?? stage}
+              glide={stage.glide}
+              width={bandDims?.width ?? `${widthCm} cm`}
+              height={bandDims?.height ?? `${heightCm} cm`}
+            />
           )}
         </div>
 
@@ -424,8 +436,10 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             fälls ut uppåt som en kolumn när man trycker; bakgrundsklick stänger menyn igen.
             Knapparna är alltid monterade och tonas/glider med en transition (spring vid
             öppning, mjuk in-easing vid stängning) så både ut- och infällning blir smidig.
-            Stäng-stegningen är omvänd så den närmast mer-knappen försvinner sist. */}
-        <div className="absolute bottom-4 left-4 z-20 lg:hidden">
+            Stäng-stegningen är omvänd så den närmast mer-knappen försvinner sist.
+            Göms medan bilden är inzoomad på ett band (nivå 2): då ska bara bandet vara i
+            fokus, inte vyinställningar för hela möbeln. */}
+        <div className={`absolute bottom-4 left-4 z-20 lg:hidden ${active !== null ? "hidden" : ""}`}>
           {toolsOpen && (
             <button
               aria-hidden
@@ -686,13 +700,15 @@ function Summary({
 }) {
   // egen mätning av hyllans rektangel för att placera scenens golv (som i förhandsvisningen).
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [stage, setStage] = useState<Stage>({ x: 0, y: 0, w: 0, h: 0, glide: false });
+  const [stage, setStage] = useState<Stage>(NO_STAGE);
   // valt leveransalternativ (ömsesidigt uteslutande, kan avmarkeras).
   const [delivery, setDelivery] = useState<DeliveryKey | null>(null);
   // väggmonterad: hyllan lyfts upp på väggen (golvet står kvar) som i förhandsvisningen
   const lift = S.mount === "vagg" ? 40 : 0;
   const pxPerCm = stage.h > 0 && heightCm > 0 ? stage.h / heightCm : 0;
-  const floorY = stage.y + stage.h + lift;
+  // stage.z är alltid 1 här (summeringen har ingen bandredigering) – samma formel som i
+  // förhandsvisningen så golvlinjen räknas ut på ett ställe i koden.
+  const floorY = stage.y + stage.h + lift * stage.z;
   const plantPx = pxPerCm * 130;
   const plantW = plantPx * (100 / 300);
   const plantLeft = Math.max(16, stage.x * 0.5 - plantW / 2);
@@ -1374,16 +1390,45 @@ function AddButton({ style, className = "", label, onClick }: { style: React.CSS
   );
 }
 
+export interface Rect { x: number; y: number; w: number; h: number }
 // Hyllans rapporterade rektangel (relativt wrap). `glide` säger om hyllan FLYTTAR SIG mjukt
 // dit (transform-transition, t.ex. väggmontering eller omskalning) eller snäpper direkt
 // (layoutbyte, t.ex. ny rad). Allt som placeras från rektangeln – scenen, plus-knapparna,
 // måttlinjerna – följer den flaggan och rör sig därför i takt med hyllan istället för att
 // halka efter.
-export interface Stage { x: number; y: number; w: number; h: number; glide: boolean }
+// `z` är kamerans inzoomning (1 = hela möbeln) och `band` det fokuserade bandets rektangel
+// i samma koordinater – måttlinjerna i fokusläget hänger på den.
+export interface Stage extends Rect { z: number; band: Rect | null; glide: boolean }
+const NO_STAGE: Stage = { x: 0, y: 0, w: 0, h: 0, z: 1, band: null, glide: false };
 // samma tajming som hyllans egen transform-transition (duration-slow / ease-default)
 const STAGE_T = "350ms cubic-bezier(0.4, 0, 0.2, 1)";
 const stageMove = (glide: boolean, ...props: string[]) =>
   glide ? props.map((x) => `${x} ${STAGE_T}`).join(", ") : "none";
+
+/* ---------- måttlinjer: bredd under och höjd till vänster om en rektangel ---------- */
+// Används både för hela möbeln (nivå 1) och för det inzoomade bandet (nivå 2) – därför tar
+// den en rektangel och etiketter, inte state. Följer samma glide-flagga som scenen.
+function Dims({ rect, glide, width, height }: { rect: Rect; glide: boolean; width: string; height: string }) {
+  const move = (...props: string[]) => stageMove(glide, ...props);
+  return (
+    <>
+      {/* bredd – under */}
+      <div className="pointer-events-none absolute z-10" style={{ left: rect.x, top: rect.y + rect.h + 16, width: rect.w, transition: move("left", "top", "width") }}>
+        <div className="h-px w-full bg-foreground/40" />
+        <span className="absolute left-0 top-0 h-3 w-px -translate-y-1/2 bg-foreground/40" />
+        <span className="absolute right-0 top-0 h-3 w-px -translate-y-1/2 bg-foreground/40" />
+        <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 border border-border bg-card px-2 py-0.5 text-xs font-semibold">{width}</span>
+      </div>
+      {/* höjd – till vänster */}
+      <div className="pointer-events-none absolute z-10" style={{ left: rect.x - 16, top: rect.y, height: rect.h, transition: move("left", "top", "height") }}>
+        <div className="h-full w-px bg-foreground/40" />
+        <span className="absolute left-0 top-0 h-px w-3 -translate-x-1/2 bg-foreground/40" />
+        <span className="absolute left-0 bottom-0 h-px w-3 -translate-x-1/2 bg-foreground/40" />
+        <span className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap border border-border bg-card px-2 py-0.5 text-xs font-semibold">{height}</span>
+      </div>
+    </>
+  );
+}
 
 /* ---------- scen: golv, vägg, skuggor och enkel rumsdekor (växt + lampa) ---------- */
 function Scene({ stage, floorY, plantPx, plantLeft, lampPx, lampLeft, showRoom, lift = 0 }: {
@@ -1538,6 +1583,35 @@ export function MiniShelf({ rows, cols }: { rows: Row[]; cols: number }) {
   return <svg width={W} height={H} className="text-foreground">{out}</svg>;
 }
 
+/* ---------- kamera: inzoomning på det band som redigeras ---------- */
+// Kameran ligger OVANPÅ inpassningen (scale/lift): `z` skalar kring hyllans golvpunkt och
+// x/y förskjuter i wrap-pixlar. Identitet = hela möbeln i bild (nivå 1).
+interface Cam { z: number; x: number; y: number }
+const NO_CAM: Cam = { z: 1, x: 0, y: 0 };
+// Hur stor del av ramen det fokuserade bandet får ta, och tak för inzoomningen. Taket finns
+// för smala band: en enda kolumn i ett litet bygg skulle annars zoomas till oigenkännlighet.
+const FOCUS_FILL = 0.86, FOCUS_MAX = 2.6;
+// Kamerans avbildning av en rektangel: skala kring golvpunkten `o`, förskjut sedan.
+const viaCam = (r: Rect, o: { x: number; y: number }, c: Cam): Rect => ({
+  x: o.x + c.x + c.z * (r.x - o.x),
+  y: o.y + c.y + c.z * (r.y - o.y),
+  w: r.w * c.z,
+  h: r.h * c.z,
+});
+const near = (a: Rect | null, b: Rect | null) =>
+  a === b || (!!a && !!b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.w - b.w) < 0.5 && Math.abs(a.h - b.h) < 0.5);
+// Bandets kumulativa offset inom hyllan. offsetLeft/-Top är LAYOUTmått och påverkas inte av
+// transformen (till skillnad från getBoundingClientRect). Kedjan av offsetParent slutar i
+// hyllan eftersom den är position: relative.
+function offsetIn(el: HTMLElement, root: HTMLElement) {
+  let x = 0, y = 0;
+  for (let n: HTMLElement | null = el; n && n !== root; n = n.offsetParent as HTMLElement | null) {
+    x += n.offsetLeft;
+    y += n.offsetTop;
+  }
+  return { x, y };
+}
+
 function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, onMeasure, lift = 0 }: {
   S: State; handleId: string; frame: string; active: number | null; hovered: number | null;
   onHover: (i: number | null) => void; onOpen: (i: number) => void;
@@ -1552,48 +1626,97 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
   // efter första målningen så inpassningen sker direkt; därefter animeras äkta ändringar
   // (t.ex. när man ändrar storlek och hyllan skalas om för att rymmas) mjukt som förut.
   const [animate, setAnimate] = useState(false);
-  const reported = useRef({ x: 0, y: 0, w: 0, h: 0 });
-  // Redigerar man ETT band (nivå 2) fryses bildens ram: ingen omzoomning och ingen
-  // omflyttning av rummet. Bara det redigerade bandet ska ändras – annars känns det som
-  // att hela bilden ändras för mycket vid varje val. När man går tillbaka till helheten
-  // ställs ramen mjukt om till den nya passningen.
+  // Kameran (nivå 2): zoomar in på det band som redigeras i stället för att bara ringa in
+  // det. Se `Cam`/`viaCam` ovan.
+  const [cam, setCam] = useState<Cam>(NO_CAM);
+  // ett element per band (rad eller kolumn) – kameran mäter det fokuserade bandet härifrån
+  const bandRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const reported = useRef<{ rect: Rect; band: Rect | null; z: number }>({ rect: { x: 0, y: 0, w: 0, h: 0 }, band: null, z: 1 });
+  // Redigerar man ETT band (nivå 2) fryses bildens INPASSNING: ingen omskalning av ramen.
+  // Bara kameran rör sig – annars känns det som att hela bilden ändras för mycket vid varje
+  // val. När man går tillbaka till helheten ställs ramen mjukt om till den nya passningen.
   const editing = active !== null;
   // spegel av `editing` som den stabila ResizeObserver-closuren (satt upp en gång) kan läsa
   const editingRef = useRef(editing);
   editingRef.current = editing;
   // Senast rapporterade transform – avgör om nästa rapport beror på att hyllan FLYTTAR SIG
-  // (scale/lift ändras → transform-transition) eller på att den byter layout (rad/kolumn
-  // läggs till → snäpper direkt). Scenen ska glida i det första fallet och snäppa i det andra.
-  const lastTf = useRef({ scale, lift });
-  // Rapportera hyllans skalade rektangel relativt wrap – scenen (golv, skugga, dekor),
-  // plus-knapparna och måttlinjerna placeras alla från den.
+  // (scale/lift/kamera ändras → transform-transition) eller på att den byter layout (rad/
+  // kolumn läggs till → snäpper direkt). Scenen ska glida i det första fallet och snäppa i
+  // det andra.
+  const lastTf = useRef({ scale, lift, cam });
+  // Hyllans geometri i wrap-koordinater: ramen (containerns content-box), golvpunkten
+  // (= transform-origin) och hyllans rektangel FÖRE kameran.
   //
-  // Rektangeln RÄKNAS UT, den mäts inte med getBoundingClientRect på hyllan. Anledningen:
+  // Rektanglarna RÄKNAS UT, de mäts inte med getBoundingClientRect på hyllan. Anledningen:
   // rect:en innehåller transformen, och under en pågående transform-transition returnerar
   // den det interpolerade värdet – alltså läget hyllan är i just nu, inte det den är på väg
   // till. Väntar man i stället på transitionend kommer målet 350 ms för sent och skuggan
   // halkar efter hela vägen. Vi känner målet direkt: containern är otransformerad, och
-  // scale/lift är vårt eget state.
-  const reportRef = useRef<() => void>(() => {});
-  reportRef.current = () => {
+  // scale/lift/cam är vårt eget state.
+  const geomRef = useRef<() => { base: Rect; origin: { x: number; y: number }; frame: Rect } | null>(() => null);
+  geomRef.current = () => {
     const el = shelfRef.current, wrap = wrapRef.current, parent = el?.parentElement;
-    if (!el || !wrap || !parent) return;
+    if (!el || !wrap || !parent) return null;
     const pr = parent.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
     const cs = getComputedStyle(parent);
-    const w = el.offsetWidth * scale, h = el.offsetHeight * scale;
+    const padL = parseFloat(cs.paddingLeft), padR = parseFloat(cs.paddingRight);
+    const padT = parseFloat(cs.paddingTop), padB = parseFloat(cs.paddingBottom);
     // transform-origin är "bottom center": scale håller underkanten still vid layoutens
     // underkant (content-boxens nederkant, items-end) och translateY lyfter den `lift` px.
-    const bottom = pr.bottom - wr.top - parseFloat(cs.paddingBottom) - lift;
-    const padL = parseFloat(cs.paddingLeft), padR = parseFloat(cs.paddingRight);
-    const cx = pr.left - wr.left + padL + (parent.clientWidth - padL - padR) / 2;
-    const next = { x: cx - w / 2, y: bottom - h, w, h };
+    // Den punkten är också golvlinjen – och det kameran skalar kring.
+    const origin = {
+      x: pr.left - wr.left + padL + (parent.clientWidth - padL - padR) / 2,
+      y: pr.bottom - wr.top - padB,
+    };
+    const w = el.offsetWidth * scale, h = el.offsetHeight * scale;
+    return {
+      base: { x: origin.x - w / 2, y: origin.y - lift - h, w, h },
+      origin,
+      frame: { x: pr.left - wr.left + padL, y: pr.top - wr.top + padT, w: parent.clientWidth - padL - padR, h: parent.clientHeight - padT - padB },
+    };
+  };
+  // Bandets rektangel före kameran (layoutmått × inpassningens scale, från hyllans hörn).
+  const bandRect = (base: Rect, i: number): Rect | null => {
+    const el = bandRefs.current[i], root = shelfRef.current;
+    if (!el || !root) return null;
+    const o = offsetIn(el, root);
+    return { x: base.x + o.x * scale, y: base.y + o.y * scale, w: el.offsetWidth * scale, h: el.offsetHeight * scale };
+  };
+  // Rapportera hyllans (och det fokuserade bandets) rektangel efter kameran – scenen (golv,
+  // skugga, dekor), plus-knapparna och måttlinjerna placeras alla från den.
+  const reportRef = useRef<() => void>(() => {});
+  reportRef.current = () => {
+    const g = geomRef.current();
+    if (!g) return;
+    const rect = viaCam(g.base, g.origin, cam);
+    const b = active !== null ? bandRect(g.base, active) : null;
+    const band = b && viaCam(b, g.origin, cam);
     const p = reported.current;
-    if (Math.abs(p.x - next.x) > 0.5 || Math.abs(p.y - next.y) > 0.5 || Math.abs(p.w - next.w) > 0.5 || Math.abs(p.h - next.h) > 0.5) {
-      reported.current = next;
-      const glide = animate && (lastTf.current.scale !== scale || lastTf.current.lift !== lift);
-      lastTf.current = { scale, lift };
-      onMeasure({ ...next, glide });
+    if (near(p.rect, rect) && near(p.band, band) && p.z === cam.z) return;
+    reported.current = { rect, band, z: cam.z };
+    const t = lastTf.current;
+    const glide = animate && (t.scale !== scale || t.lift !== lift || t.cam !== cam);
+    lastTf.current = { scale, lift, cam };
+    onMeasure({ ...rect, z: cam.z, band, glide });
+  };
+  // Ställ kameran mot det fokuserade bandet: zooma så bandet fyller FOCUS_FILL av ramen och
+  // lägg dess mitt i ramens mitt. Utan fokus (nivå 1) går kameran tillbaka till identitet.
+  const focusRef = useRef<() => void>(() => {});
+  focusRef.current = () => {
+    if (active === null) {
+      setCam((c) => (c === NO_CAM ? c : NO_CAM));
+      return;
     }
+    const g = geomRef.current();
+    const b = g && bandRect(g.base, active);
+    if (!g || !b || b.w <= 0 || b.h <= 0) return;
+    const z = Math.max(1, Math.min(FOCUS_MAX, (g.frame.w * FOCUS_FILL) / b.w, (g.frame.h * FOCUS_FILL) / b.h));
+    const next: Cam = {
+      z,
+      x: g.frame.x + g.frame.w / 2 - g.origin.x - z * (b.x + b.w / 2 - g.origin.x),
+      y: g.frame.y + g.frame.h / 2 - g.origin.y - z * (b.y + b.h / 2 - g.origin.y),
+    };
+    setCam((c) => (Math.abs(c.z - next.z) < 0.002 && Math.abs(c.x - next.x) < 0.5 && Math.abs(c.y - next.y) < 0.5 ? c : next));
   };
   // Stabil mätfunktion (senaste closure) så ResizeObservern kan sättas upp en gång.
   const measureRef = useRef<() => void>(() => {});
@@ -1644,13 +1767,14 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     const parent = shelfRef.current?.parentElement;
     if (!parent) return;
     measureRef.current();
-    // Medan man redigerar ett band (nivå 2) är ramen fryst – hoppa över refit. Annars
-    // zoomar hyllan till när vyn byter layout (mobil: section blir `fixed`/100vw och
-    // scrollen låses → containerns bredd ändras → ny skala), vilket ser ryckigt ut.
+    // Medan man redigerar ett band (nivå 2) är ramen fryst – hoppa över refit, ställ bara
+    // om kameran mot bandet i den nya ramen. Annars zoomar hyllan till när vyn byter layout
+    // (mobil: section blir `fixed`/100vw och scrollen låses → containerns bredd ändras → ny
+    // skala), vilket ser ryckigt ut.
     // Observera både ramen (fönsterresize) och hyllan (dess layoutmått ändras när rader/
     // kolumner tillkommer). ResizeObserver rapporterar content-box och påverkas därför
     // inte av transformen – ingen risk att en pågående omskalning triggar en loop.
-    const ro = new ResizeObserver(() => { if (!editingRef.current) measureRef.current(); });
+    const ro = new ResizeObserver(() => { editingRef.current ? focusRef.current() : measureRef.current(); });
     ro.observe(parent);
     if (shelfRef.current) ro.observe(shelfRef.current);
     return () => ro.disconnect();
@@ -1659,19 +1783,22 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
   // medan man redigerar ett enskilt band. Då fryses ramen (se `editing` ovan). När man
   // lämnar redigeringen (editing → false) körs den och ställer om mjukt till ny passning.
   // Första körningen är mount (layouten sätter sig, ingen animation önskas). Från och med
-  // första ÄKTA ändringen slås övergångar på så att omskalning (t.ex. ändrad storlek)
-  // glider mjukt istället för att animera zoom-in-och-krymp varje gång vyn öppnas.
+  // första ÄKTA ändringen slås övergångar på så att omskalning (t.ex. ändrad storlek) och
+  // kamerans in-/utzoomning glider mjukt istället för att animera vid första målningen.
   const settled = useRef(false);
   useLayoutEffect(() => {
-    if (editing) return;
-    measureRef.current();
     if (settled.current) setAnimate(true);
     else settled.current = true;
+    if (editing) return;
+    measureRef.current();
   }, [S.cols, S.rows, S.colDefs, lift, editing]);
-  // Ny scale/lift committad → rapportera det nya MÅLET direkt (se reportRef ovan). Scenen
-  // får samma tajming som hyllans transform-transition och glider därför i takt med den,
-  // istället för att starta när hyllan redan är framme.
-  useLayoutEffect(() => { if (!editing) reportRef.current(); }, [scale, lift, editing]);
+  // Kameran ställs om när fokus byts (klick/steppern) och när bandets mått ändras medan man
+  // redigerar det (t.ex. ny radhöjd) – då följer inzoomningen med bandet.
+  useLayoutEffect(() => { focusRef.current(); }, [active, scale, lift, S.cols, S.rows, S.colDefs, S.axis, S.category]);
+  // Ny scale/lift/kamera committad → rapportera det nya MÅLET direkt (se reportRef ovan).
+  // Scenen får samma tajming som hyllans transform-transition och glider därför i takt med
+  // den, istället för att starta när hyllan redan är framme.
+  useLayoutEffect(() => { reportRef.current(); }, [scale, lift, cam]);
 
   const grid = gridCells(S);
   // Per-kolumn-höjd bara för TV-möbler (ojämn topp). Då ritas varje kolumn som en egen
@@ -1682,9 +1809,17 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
   // Outline ligger alltid ute (transparent) så layouten inte hoppar när den tänds.
   const bandRing = (i: number) =>
     active === i ? "outline-ring" : hovered === i ? "outline-foreground/25" : "outline-transparent";
+  // Ringen är gränssnitt, inte möbel: --inv håller den hårfin även när hyllan (och kameran)
+  // skalar upp – annars blir 2px en klumpig 5px-ram vid inzoomat band.
+  const ringStyle: React.CSSProperties = { outlineWidth: "calc(2px * var(--inv, 1))", outlineOffset: "calc(2px * var(--inv, 1))" };
+  // Ett element per band så kameran kan mäta det fokuserade bandet. Listan trimmas till
+  // antalet band så borttagna rader/kolumner inte lämnar kvar döda element.
+  const bandCount = S.axis === "kolumn" ? S.cols : S.rows.length;
+  bandRefs.current.length = bandCount;
+  const bandRef = (i: number) => (el: HTMLDivElement | null) => { bandRefs.current[i] = el; };
 
   return (
-    <div ref={shelfRef} className={`flex flex-col gap-1.5 p-1.5 ${animate ? "transition-[transform,background-color] duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, transform: `translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / scale }}>
+    <div ref={shelfRef} className={`relative flex flex-col gap-1.5 p-1.5 ${animate ? "transition-[transform,background-color] duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z}) translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / (scale * cam.z) }}>
       {perCol ? (
         // TV-möbel: kolumner med egen höjd, golv-justerade. Varje kolumn är en egen stomme.
         <div className="flex items-end gap-1.5">
@@ -1694,16 +1829,17 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
             return (
               <div
                 key={ci}
+                ref={bandRef(ci)}
                 onMouseEnter={() => onHover(ci)}
                 onMouseLeave={() => onHover(null)}
                 onClick={() => onOpen(ci)}
-                className={`group relative flex cursor-pointer flex-col gap-1.5 p-1.5 outline outline-2 outline-offset-2 transition-[outline-color] duration-base ${bandRing(ci)}`}
-                style={{ background: frame }}
+                className={`group relative flex cursor-pointer flex-col gap-1.5 p-1.5 outline transition-[outline-color] duration-base ${bandRing(ci)}`}
+                style={{ background: frame, ...ringStyle }}
               >
                 {types.map((t, k) => (
                   <Cube key={k} type={t} front={S.front} shelves={t === "o" ? def.shelves ?? 0 : 0} span={1} color={S.color} handle={handleId} frame={frame} sizeStyle={{ height: U, width: U }} />
                 ))}
-                <EditPill onClick={() => onOpen(ci)} />
+                {active !== ci && <EditPill onClick={() => onOpen(ci)} />}
               </div>
             );
           })}
@@ -1714,16 +1850,18 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
           {Array.from({ length: S.cols }, (_, ci) => (
             <div
               key={ci}
+              ref={bandRef(ci)}
               onMouseEnter={() => onHover(ci)}
               onMouseLeave={() => onHover(null)}
               onClick={() => onOpen(ci)}
-              className={`group relative flex flex-1 cursor-pointer flex-col gap-1.5 outline outline-2 outline-offset-2 transition-[outline-color] duration-base ${bandRing(ci)}`}
+              className={`group relative flex flex-1 cursor-pointer flex-col gap-1.5 outline transition-[outline-color] duration-base ${bandRing(ci)}`}
+              style={ringStyle}
             >
               {S.rows.map((row, ri) => {
                 const c = grid[ri][ci];
                 return <Cube key={ri} type={c.type} front={c.front} shelves={c.shelves} span={1} color={S.color} handle={handleId} frame={frame} sizeStyle={{ height: (row.h / 40) * U, width: "100%" }} />;
               })}
-              <EditPill onClick={() => onOpen(ci)} />
+              {active !== ci && <EditPill onClick={() => onOpen(ci)} />}
             </div>
           ))}
         </div>
@@ -1731,14 +1869,15 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
         S.rows.map((row, ri) => (
           <div
             key={ri}
+            ref={bandRef(ri)}
             onMouseEnter={() => onHover(ri)}
             onMouseLeave={() => onHover(null)}
             onClick={() => onOpen(ri)}
-            className={`group relative flex cursor-pointer gap-1.5 outline outline-2 outline-offset-2 transition-[outline-color] duration-base ${bandRing(ri)}`}
-            style={{ height: (row.h / 40) * U }}
+            className={`group relative flex cursor-pointer gap-1.5 outline transition-[outline-color] duration-base ${bandRing(ri)}`}
+            style={{ height: (row.h / 40) * U, ...ringStyle }}
           >
             {grid[ri].map((c, ci) => <Cube key={ci} type={c.type} front={c.front} shelves={c.shelves} span={c.span} color={S.color} handle={handleId} frame={frame} />)}
-            <EditPill onClick={() => onOpen(ri)} />
+            {active !== ri && <EditPill onClick={() => onOpen(ri)} />}
           </div>
         ))
       )}
