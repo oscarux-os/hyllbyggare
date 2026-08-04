@@ -2,7 +2,7 @@
 
 import { useRef, useState, useLayoutEffect, useEffect } from "react";
 import Image from "next/image";
-import { Info, Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Upload, Trash2, Sofa, Pencil, Truck, MoreHorizontal } from "lucide-react";
+import { Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Trash2, Sofa, Pencil, Truck, MoreHorizontal } from "lucide-react";
 import { Heading, Text } from "./Type";
 import Tillval from "./TillvalCompact";
 import ProductInfo from "./ProductInfo";
@@ -45,7 +45,6 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const [showDims, setShowDims] = useState(false);
   // rumsdekoren (växt + lampa) är avstängd som standard – den slås på via "Visa miljö".
   const [showScene, setShowScene] = useState(false);
-  const [showInfo, setShowInfo] = useState(false);
   // mobil: verktygsknapparna fälls ihop bakom en mer-knapp i hörnet så de inte tar
   // hela toppen. Öppnas som en liten kolumn under knappen. Desktop visar dem inline.
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -330,12 +329,10 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   );
   // Verktygen delas mellan desktop (inline-rad) och mobil (hopfälld meny).
   // keepOpen: verktyg som bara ger direkt feedback på hyllan (visa miljö/mått) låter
-  // mobilmenyn stå kvar öppen; övriga (öppnar popover / delar) stänger menyn.
+  // mobilmenyn stå kvar öppen; ett verktyg som öppnar egen yta sätter false och stänger menyn.
   const tools = [
-    { label: "Information", icon: <Info size={18} />, active: showInfo, onClick: () => setShowInfo((v) => !v), keepOpen: false },
     { label: "Visa miljö", icon: <Sofa size={18} />, active: showScene, onClick: () => setShowScene((v) => !v), keepOpen: true },
     { label: "Visa mått", icon: <Ruler size={18} />, active: showDims, onClick: () => setShowDims((v) => !v), keepOpen: true },
-    { label: "Dela", icon: <Upload size={18} />, active: false, onClick: undefined, keepOpen: false },
   ];
 
   return (
@@ -379,21 +376,6 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             ))}
           </div>
         </div>
-
-        {/* info-popover – tidigare bottentexten, nu bakom informationsknappen. Öppnas UNDER
-            verktygsraden (samma toppoffset som knapparna + knapphöjd) så den inte skymmer dem. */}
-        {showInfo && (
-          <div
-            className="absolute right-4 z-30 max-w-xs border border-border bg-card p-4 shadow-sm md:right-6"
-            style={{ top: (toolbarPadTop ?? 16) + 52 }}
-          >
-            <Text variant="small" className="text-muted-foreground">
-              {S.axis === "kolumn"
-                ? "Klicka på en kolumn för att ändra innehållet."
-                : "Klicka på en rad för att ändra fack, luckor, lådor och hyllplan."}
-            </Text>
-          </div>
-        )}
 
         <div ref={wrapRef} className="relative h-full">
           {stage.w > 0 && (
