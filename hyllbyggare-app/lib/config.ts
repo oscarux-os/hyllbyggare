@@ -11,6 +11,10 @@ export interface Cell {
   span: number;
   front: Front;
   shelves: number;
+  // Fackets egen höjd i cm (20 | 40 | 80). Bara meningsfull i kolumnläge med egna
+  // kolumnstommar (TV-möbler) – där kan ett fack vara högre än de andra, t.ex. en hög öppning
+  // för TV:n. I radläge bär raden höjden. undefined = 40 cm-modulen.
+  h?: number;
 }
 export interface Row {
   h: number; // 20 | 40 | 80
@@ -42,6 +46,10 @@ export interface State {
 export interface ColDef {
   doors: Amount;
   drawers: Amount;
+  // per-fack-innehåll uppifrån och ner (öppet/lucka/låda + hyllplan per fack). Sätts när
+  // man redigerar ett enskilt fack i kolumnen och har då företräde över mängd-modellen
+  // nedan – samma roll som radens cells. undefined = härled ur doors/drawers.
+  cells?: Cell[];
   // per-kolumn höjd i 40 cm-celler; undefined = ärv global höjd (radantalet). Används
   // främst för TV-möbler där en sektion behöver vara lägre/högre än de andra.
   height?: number;
@@ -86,7 +94,7 @@ export const LEGS: [string, string, string][] = [
 export const HANDLES: [string, string, string][] = [
   ["h1", "Träknopp", "Rund knopp i massiv ek – varm och taktil."],
   ["h2", "Mässingsknopp", "Liten rund knopp i mässing, klassisk och nätt."],
-  ["h3", "Beslag", "Avlångt bygelhandtag – lätt att få tag i."],
+  ["h3", "Bygelhandtag", "Avlångt bygelhandtag – lätt att få tag i."],
   ["push", "Push-open", "Tryck till så öppnas den – helt utan handtag."],
 ];
 
@@ -148,6 +156,101 @@ export function rowCells(row: Row, cols: number): Cell[] {
   return fillRow(row, cols).map((t) => cellObj(t, 1, row.front, t === "o" ? row.shelves : 0));
 }
 
+// --- per-fack-redigering ---
+// Facken (cells) är den finkorniga modellen: mängd-modellen (Inga/Några/Alla) är bara ett
+// sätt att GENERERA fack. Så fort man rör ett enskilt fack materialiseras listan och blir
+// sanningen för bandet. Hjälparna nedan håller den listan giltig när bandet ändrar form.
+
+// Klipp/fyll facken så att spannen summerar till exakt `cols` (bredden har ändrats).
+// Nya fack läggs till som öppna – ett smalare band tappar de fack som inte får plats.
+export function fitCells(cells: Cell[], cols: number): Cell[] {
+  const out: Cell[] = [];
+  let s = 0;
+  for (const c of cells) {
+    if (s >= cols) break;
+    const span = Math.min(c.span, cols - s);
+    out.push({ ...c, span });
+    s += span;
+  }
+  while (s < cols) {
+    out.push(cellObj("o", 1, cells[0]?.front ?? "plain", 0));
+    s++;
+  }
+  return out;
+}
+
+// Håll facken inom vad höjden tillåter: hyllplan kapas till maxShelves, och lådor som inte
+// längre får plats (höga fack) öppnas – samma regel som mängd-modellens `drawers = "none"`.
+// Stängda fack har alltid 0 hyllplan.
+export function normalizeCells(cells: Cell[], h: number): Cell[] {
+  const ms = maxShelves(h);
+  const dOk = drawersAllowed(h);
+  return cells.map((c) => {
+    const type: CellType = c.type === "d" && !dOk ? "o" : c.type;
+    return { ...c, type, shelves: type === "o" ? Math.min(c.shelves, ms) : 0 };
+  });
+}
+
+// Sätt ett värde på ETT fack i en rad. Raden materialiseras (och låses) så att
+// per-fack-valen består – stilarnas mängd-modell tar inte över igen.
+export function setRowCell(row: Row, cols: number, ci: number, patch: Partial<Cell>): Row {
+  const cells = rowCells(row, cols).map((c, i) => (i === ci ? { ...c, ...patch } : { ...c }));
+  return { ...row, cells: normalizeCells(cells, row.h), locked: true };
+}
+
+// Samma värde på ALLA fack i raden ("Alla"-fliken) – snabbvägen till en enhetlig rad.
+export function setRowCells(row: Row, cols: number, patch: Partial<Cell>): Row {
+  const cells = rowCells(row, cols).map((c) => ({ ...c, ...patch }));
+  return { ...row, cells: normalizeCells(cells, row.h), locked: true };
+}
+
+// Fackens innehåll i en kolumn, uppifrån och ner. Per-fack-listan (cells) har företräde;
+// saknas den härleds facken ur mängd-modellen. Listan trimmas/fylls till n så att en ändrad
+// höjd varken tappar fack eller lämnar tomrum.
+export function colCells(def: ColDef, n: number, front: Front = "plain"): Cell[] {
+  const cells = def.cells;
+  if (cells) return Array.from({ length: n }, (_, i) => cells[i] ?? cellObj("o", 1, front, 0));
+  return fillColumn(def, n).map((t) => cellObj(t, 1, front, t === "o" ? def.shelves ?? 0 : 0));
+}
+
+// Sätt ett värde på ETT fack i en kolumn. `h` är just det fackets höjd i cm (normalt 40) –
+// bara det patchade facket normaliseras, de andra kan ha andra höjder.
+export function setColCell(def: ColDef, n: number, front: Front, ki: number, patch: Partial<Cell>, h = 40): ColDef {
+  const cells = colCells(def, n, front).map((c, i) => (i === ki ? { ...c, ...patch } : { ...c }));
+  // Sätter patchen en ny fackhöjd är det den som gäller för villkoren (hyllplan, lådor).
+  if (cells[ki]) cells[ki] = normalizeCells([cells[ki]], cells[ki].h ?? h)[0];
+  return { ...def, cells, locked: true };
+}
+
+// Samma värde på ALLA fack i kolumnen ("Alla"-fliken). Varje fack normaliseras mot sin egen
+// höjd (`heights`), eftersom facken i en kolumn kan vara olika höga.
+export function setColCells(def: ColDef, n: number, front: Front, patch: Partial<Cell>, heights: number[]): ColDef {
+  const cells = colCells(def, n, front).map((c, i) => {
+    const merged = { ...c, ...patch };
+    return normalizeCells([merged], merged.h ?? heights[i] ?? 40)[0];
+  });
+  return { ...def, cells, locked: true };
+}
+
+// Lägg till respektive ta bort ett fack i en kolumn. Bara kolumner som bär sin egen höjd
+// (TV-möbler) kan det – annars kommer fackantalet från ett globalt val.
+//
+// Båda skriver ut fackens höjder explicit innan listan ändras. Ett fack utan egen `h` ärver
+// höjden från raden på SAMMA INDEX (se colCellHeights), så när listan förskjuts skulle de
+// andra facken tyst byta höjd. Med höjderna utskrivna står de kvar.
+export function addColCell(def: ColDef, n: number, front: Front, heights: number[]): ColDef {
+  // Nytt fack överst: facken numreras nerifrån, så de befintliga behåller sina nummer.
+  const kept = colCells(def, n, front).map((c, i) => ({ ...c, h: c.h ?? heights[i] ?? 40 }));
+  return { ...def, cells: [{ ...cellObj("o", 1, front, 0), h: 40 }, ...kept], height: n + 1, locked: true };
+}
+
+export function removeColCell(def: ColDef, n: number, front: Front, ki: number, heights: number[]): ColDef {
+  const cells = colCells(def, n, front)
+    .map((c, i) => ({ ...c, h: c.h ?? heights[i] ?? 40 }))
+    .filter((_, i) => i !== ki);
+  return { ...def, cells, height: cells.length, locked: true };
+}
+
 // Fyll en kolumn nedåt utifrån mängd luckor/lådor (lådor underst, sen luckor, öppet överst).
 export function fillColumn(def: ColDef, n: number): CellType[] {
   const arr: CellType[] = new Array(n).fill("o");
@@ -169,19 +272,26 @@ export function fillColumn(def: ColDef, n: number): CellType[] {
 export function gridCells(S: State): Cell[][] {
   if (S.axis === "kolumn" && S.colDefs) {
     const n = S.rows.length;
-    const colArrs = S.colDefs.map((def) => fillColumn(def, n));
-    return S.rows.map((_, ri) =>
-      colArrs.map((colArr, ci) =>
-        cellObj(colArr[ri], 1, S.front, colArr[ri] === "o" ? S.colDefs![ci].shelves ?? 0 : 0),
-      ),
-    );
+    const colArrs = S.colDefs.map((def) => colCells(def, n, S.front));
+    return S.rows.map((_, ri) => colArrs.map((colArr) => colArr[ri]));
   }
   return S.rows.map((row) => rowCells(row, S.cols));
 }
 
-// Höjd (i 40 cm-celler) för en kolumn i kolumnläge: egen override om satt, annars den
-// globala höjden = antal rader. Så orörda kolumner följer Form-defaulten (default+override).
+// Antal fack i en kolumn: egen override om satt, annars den globala höjden = antal rader.
+// Så orörda kolumner följer Form-defaulten (default+override).
 export const colHeight = (S: State, ci: number): number => S.colDefs?.[ci]?.height ?? S.rows.length;
+
+// Fackens höjder i cm i en kolumn, uppifrån och ner. Ett fack med egen höjd (TV-möbler)
+// vinner; annars gäller radens höjd på den nivån (den delade stommen).
+export function colCellHeights(S: State, ci: number): number[] {
+  const def = S.colDefs?.[ci] ?? { doors: "none" as Amount, drawers: "none" as Amount };
+  return colCells(def, colHeight(S, ci), S.front).map((c, k) => c.h ?? S.rows[k]?.h ?? 40);
+}
+
+// Kolumnens verkliga höjd i cm – summan av dess fack. Med enbart 40 cm-fack är den samma
+// som cellsToCm(antal fack); har ett fack egen höjd följer måttet med.
+export const colCm = (S: State, ci: number): number => stackCm(colCellHeights(S, ci));
 
 // cm-höjd för n staplade 40 cm-moduler (18 mm mellanrum), samma modell som realH.
 export const cellsToCm = (n: number) => Math.round((n * 400 - Math.max(0, n - 1) * 18) / 10);
@@ -193,7 +303,7 @@ export function allCells(S: State): Cell[] {
     const out: Cell[] = [];
     for (let ci = 0; ci < S.cols; ci++) {
       const def = S.colDefs?.[ci] ?? { doors: "none" as Amount, drawers: "none" as Amount };
-      fillColumn(def, colHeight(S, ci)).forEach((t) => out.push(cellObj(t, 1, S.front, t === "o" ? def.shelves ?? 0 : 0)));
+      colCells(def, colHeight(S, ci), S.front).forEach((c) => out.push(c));
     }
     return out;
   }
@@ -201,10 +311,13 @@ export function allCells(S: State): Cell[] {
 }
 
 export const realW = (cols: number) => Math.round((cols * 400 - (cols - 1) * 18) / 10);
-export const realH = (rows: Row[]) => {
-  const mm = rows.reduce((a, x) => a + (RMM[x.h] || x.h * 10), 0) - (rows.length - 1) * 18;
+// Staplade modulhöjder → verklig höjd i cm (18 mm mellan modulerna). Gäller både radernas
+// höjder och fackens i en kolumn.
+export const stackCm = (heights: number[]) => {
+  const mm = heights.reduce((a, h) => a + (RMM[h] || h * 10), 0) - Math.max(0, heights.length - 1) * 18;
   return Math.round(mm / 10);
 };
+export const realH = (rows: Row[]) => stackCm(rows.map((x) => x.h));
 
 // --- höjdstege ---
 // Höjd-reglaget växer i 20 cm-steg. Man bygger nerifrån och uppåt: basen (nedersta
@@ -376,7 +489,7 @@ export const CATEGORIES: Category[] = [
   {
     id: "byraar",
     name: "Byrå",
-    desc: "Sektioner av lådor i bredd.",
+    desc: "Lådor sida vid sida – klassisk förvaring.",
     axis: "kolumn",
     heading: "Bygg din egen byrå",
     make: () =>
@@ -390,7 +503,7 @@ export const CATEGORIES: Category[] = [
   {
     id: "vitrin",
     name: "Skåp & vitrinskåp",
-    desc: "Highboard med glas upptill, stängt nedtill.",
+    desc: "Högt skåp med glas upptill och stängt nedtill.",
     axis: "rad",
     heading: "Bygg ditt eget skåp",
     make: () =>
@@ -402,7 +515,7 @@ export const CATEGORIES: Category[] = [
   {
     id: "skankar",
     name: "Skänk",
-    desc: "Låg och bred med mix av luckor och lådor.",
+    desc: "Låg och bred, med en mix av luckor och lådor.",
     axis: "kolumn",
     heading: "Bygg din egen skänk",
     make: () =>
@@ -416,7 +529,7 @@ export const CATEGORIES: Category[] = [
   {
     id: "tvbank",
     name: "TV-bänk",
-    desc: "Låg, avlång enhet för media.",
+    desc: "Låg och avlång, med plats för tv:n och tekniken.",
     axis: "kolumn",
     heading: "Bygg din egen TV-bänk",
     // Ojämn topp: höga skåpsektioner i kanterna, låg öppen mitt för TV:n. Global höjd
@@ -478,7 +591,7 @@ export function buildState(
 // colDefs för en kolumnläges-kategori vid ett givet antal kolumner. Behåller
 // kategorins "DNA" (byrå = bara lådor, skänk = låda/luckor/öppet, TV-bänk = skåp i
 // kanterna och låg öppen mitt) men skalar till valfri bredd.
-function colDefsFor(categoryId: string, cols: number, units: number): ColDef[] {
+export function colDefsFor(categoryId: string, cols: number, units: number): ColDef[] {
   if (categoryId === "byraar") {
     return Array.from({ length: cols }, () => ({ doors: "none" as Amount, drawers: "max" as Amount }));
   }

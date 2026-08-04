@@ -21,9 +21,9 @@ export default function ProductInfo({
       title: "Produktbeskrivning",
       content: (
         <Text className="text-muted-foreground">
-          Anamosa är ett modulärt hyllsystem som du bygger helt efter dina behov. Välj antal fack,
-          fronter, luckor och lådor – och komplettera med ben eller väggmontering. Stommen finns i
-          massiv ek och i slitstark laminat.
+          Anamosa är ett modulärt hyllsystem som du bygger helt efter dina behov. Välj storlek,
+          öppna fack, luckor och lådor – och komplettera med ben eller väggmontering. Stommen finns
+          i massiv ek och i slitstarkt laminat.
         </Text>
       ),
     },

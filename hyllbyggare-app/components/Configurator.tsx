@@ -2,16 +2,17 @@
 
 import { useRef, useState, useLayoutEffect, useEffect } from "react";
 import Image from "next/image";
-import { Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Trash2, Sofa, Pencil, Truck, MoreHorizontal } from "lucide-react";
+import { Plus, Minus, Check, ArrowLeft, X, Ruler, Trash2, RotateCcw, Sofa, Pencil, Truck, MoreHorizontal } from "lucide-react";
 import { Heading, Text } from "./Type";
 import Tillval from "./TillvalCompact";
 import ProductInfo from "./ProductInfo";
 import { TILLVAL_PRODUCTS, offerAmount, formatKr, type TillvalProduct } from "@/lib/tillval";
 import {
-  COLORS, LEGS, HANDLES, STYLES, FRONT_LABEL, AMOUNT_LABEL, CATEGORIES,
+  COLORS, LEGS, HANDLES, STYLES, FRONT_LABEL, CATEGORIES,
   U, STEP, COLMAX, ROWMAX, HEIGHT_STEPS, type State, type Row, type Amount, type Front, type ColDef, type CellType,
-  newRow, r, cellObj, applyStyle, applyColStyle, rowCells, gridCells, fillColumn, allCells, colHeight, cellsToCm, realW, realH, maxShelves, drawersAllowed, fitAmount, hasFronts,
-  heightStepToLayout, layoutToHeightStep,
+  newRow, r, cellObj, applyStyle, applyColStyle, rowCells, gridCells, fillColumn, colCells, allCells, colHeight, colCellHeights, colCm, cellsToCm, realW, realH, maxShelves, drawersAllowed, fitAmount, hasFronts,
+  fitCells, normalizeCells, setRowCell, setRowCells, setColCell, setColCells, addColCell, removeColCell, colDefsFor,
+  heightStepToLayout, layoutToHeightStep, type Cell,
 } from "@/lib/config";
 
 const initial: State = {
@@ -37,8 +38,29 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const [S, setS] = useState<State>(initialState);
   // active = index på bandet som redigeras i panelen (nivå 2); null = globala val (nivå 1).
   const [active, setActive] = useState<number | null>(null);
+  // activeCell = facket inom bandet som redigeras (fliken "Fack N"). Valen i nivå 2 gäller
+  // ett fack i taget – bandet i sig bär bara sin höjd. Nollställs när man byter band.
+  // -1 = "Alla": man kommer in i ett band med hela bandet valt, inte med ett godtyckligt fack.
+  // Först när man pekar ut ett fack (flik eller klick i bilden) smalnar valen av till det.
+  const [activeCell, setActiveCell] = useState(-1);
+
   // hovrat band – tänder markering + "Redigera"-knappen (öppnar inte nivå 2 av sig självt).
   const [hovered, setHovered] = useState<number | null>(null);
+  // Mobilens redigeringsark (nivå 2) är inte halva skärmen längre utan så högt som dess
+  // innehåll kräver, upp till ett tak. Höjden mäts och skickas till bilden ovanför som
+  // --sheet-h, så bilden får hela resten – ett kort ark ger alltså en större möbel.
+  // Mätningen sitter på INNEHÅLLET, inte på arket: arkets egen höjd sätter vi utifrån måttet
+  // för att kunna animera den, och en observatör på arket skulle då mäta sitt eget resultat.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [sheetH, setSheetH] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = sheetRef.current;
+    if (active === null || !el) { setSheetH(null); return; }
+    const ro = new ResizeObserver(() => setSheetH(el.offsetHeight));
+    ro.observe(el);
+    setSheetH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, [active]);
   const wrapRef = useRef<HTMLDivElement>(null);
   // hyllans faktiska (skalade) rektangel relativt wrapRef – förankrar lägg-till-knapparna
   const [stage, setStage] = useState<Stage>(NO_STAGE);
@@ -98,7 +120,14 @@ export default function Configurator({ initialState = initial, onBack }: { initi
         // aktiv stil: låt nya (och olåsta) kolumner följa stilmönstret
         if (s.axis === "kolumn" && s.style) colDefs = applyColStyle(s.style, cols, colDefs);
       }
-      return { ...s, cols, rows, colDefs };
+      // Rader med per-fack-innehåll: klipp/fyll facken till den nya bredden så att
+      // spannen fortsätter summera till antalet kolumner.
+      return {
+        ...s,
+        cols,
+        rows: rows.map((row) => (row.cells ? { ...row, cells: fitCells(row.cells, cols) } : row)),
+        colDefs,
+      };
     });
   const setRows = (n: number) =>
     setS((s) => {
@@ -124,7 +153,9 @@ export default function Configurator({ initialState = initial, onBack }: { initi
         const nr: Row = { ...row, h };
         nr.shelves = Math.min(nr.shelves, maxShelves(h));
         if (!drawersAllowed(h)) nr.drawers = "none";
-        delete nr.cells;
+        // Per-fack-innehållet behålls (det är radens sanning) men anpassas till den nya
+        // höjden: hyllplan kapas och lådor som inte får plats i ett högt fack öppnas.
+        if (nr.cells) nr.cells = normalizeCells(nr.cells, h);
         return nr;
       });
       if (s.style && s.axis !== "kolumn") rows = applyStyle(s.style, s.cols, rows);
@@ -151,13 +182,16 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       const rows = s.rows.map((row, idx) => {
         if (idx !== i) return row;
         const nr: Row = { ...row, ...patch, locked: true };
-        delete nr.cells;
-        // luckor och lådor delar på raden: sätter man den ena ger den andra plats
+        // luckor och lådor delar på raden: sätter man den ena ger den andra plats.
+        // Mängd-modellen ersätter per-fack-innehållet (den genererar om facken).
+        if (patch.doors !== undefined || patch.drawers !== undefined) delete nr.cells;
         if (patch.doors !== undefined) nr.drawers = fitAmount(nr.drawers, patch.doors);
         if (patch.drawers !== undefined) nr.doors = fitAmount(nr.doors, patch.drawers);
         if (patch.h !== undefined) {
           nr.shelves = Math.min(nr.shelves, maxShelves(nr.h));
           if (!drawersAllowed(nr.h)) nr.drawers = "none";
+          // ny radhöjd → facken behålls men anpassas (se setHeight)
+          if (nr.cells) nr.cells = normalizeCells(nr.cells, nr.h);
         }
         return nr;
       });
@@ -188,10 +222,88 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       return { ...s, cols: s.cols - 1, colDefs };
     });
 
+  // ---- per fack ----
+  // Facken redigeras ett i taget, eller alla på en gång ("Alla"-fliken → index -1).
+  // Ett fack i en rad: radens fack materialiseras och just det facket patchas.
+  const editRowCell = (i: number, ci: number, patch: Partial<Cell>) =>
+    setS((s) => ({
+      ...s,
+      rows: s.rows.map((row, idx) =>
+        idx !== i ? row : ci < 0 ? setRowCells(row, s.cols, patch) : setRowCell(row, s.cols, ci, patch),
+      ),
+    }));
+  // Ett fack i en kolumn (kolumnläge): samma sak fast nedåt i kolumnen. Facken är 40 cm i
+  // TV-möbler (egna kolumnstommar) – annars radens höjd på respektive nivå.
+  const editColCell = (ci: number, ki: number, patch: Partial<Cell>) =>
+    setS((s) => {
+      const defs = s.colDefs ?? Array.from({ length: s.cols }, emptyCol);
+      return {
+        ...s,
+        colDefs: defs.map((d, idx) => {
+          if (idx !== ci) return d;
+          const n = colHeight(s, idx);
+          const hs = colCellHeights(s, idx);
+          return ki < 0
+            ? setColCells(d, n, s.front, patch, hs)
+            : setColCell(d, n, s.front, ki, patch, hs[ki] ?? 40);
+        }),
+      };
+    });
+
+  // Lägg till / ta bort ett fack i en kolumn. Bara kolumner med egen höjd (TV-möbler) har
+  // det – i övriga lägen kommer fackantalet från bredden eller höjden i grundvalen, och
+  // knapparna visas inte alls. Tas det fack bort som redigeras hoppar valet till facket under.
+  const addCell = (ci: number) =>
+    setS((s) => {
+      const defs = s.colDefs ?? Array.from({ length: s.cols }, emptyCol);
+      if (colHeight(s, ci) >= ROWMAX) return s;
+      return {
+        ...s,
+        colDefs: defs.map((d, idx) => (idx === ci ? addColCell(d, colHeight(s, idx), s.front, colCellHeights(s, idx)) : d)),
+      };
+    });
+  const removeCell = (ci: number, ki: number) => {
+    setS((s) => {
+      const defs = s.colDefs ?? Array.from({ length: s.cols }, emptyCol);
+      if (colHeight(s, ci) <= 1) return s;
+      return {
+        ...s,
+        colDefs: defs.map((d, idx) => (idx === ci ? removeColCell(d, colHeight(s, idx), s.front, ki, colCellHeights(s, idx)) : d)),
+      };
+    });
+    setActiveCell((c) => Math.max(0, c > ki ? c - 1 : c));
+  };
+
+  // Återställ ett band till stilens utgångsläge. Så fort man rör ett enskilt fack
+  // materialiseras bandets fack och bandet LÅSES mot stilen (locked) – annars skulle nästa
+  // stilberäkning skriva över det man just valt. Det gör också att stilen aldrig kommer
+  // tillbaka av sig själv, och det här är vägen tillbaka: släpp låset, kasta per-fack-listan
+  // (och kolumnens egna fackantal) och låt stilen generera bandet på nytt.
+  const resetRow = (i: number) => {
+    setS((s) => {
+      const rows = s.rows.map((row, idx) => (idx === i ? { ...row, cells: undefined, locked: false } : row));
+      return { ...s, rows: s.style ? applyStyle(s.style, s.cols, rows) : rows };
+    });
+    setActiveCell(-1);
+  };
+  // Kolumnen går tillbaka till kategorins utgångsläge, inte till "inget". Skillnaden syns på
+  // TV-bänken: dess låga mitt ÄR en egen fackhöjd per kolumn, satt av kategorin. Att bara
+  // kasta höjden hade rätat ut silhuetten och gjort möbeln till något annat än en TV-bänk.
+  const resetCol = (ci: number) => {
+    setS((s) => {
+      const preset = colDefsFor(s.category ?? "", s.cols, s.rows.length);
+      const defs = (s.colDefs ?? Array.from({ length: s.cols }, emptyCol)).map((d, idx) =>
+        idx === ci ? { ...(preset[idx] ?? emptyCol()) } : d,
+      );
+      return { ...s, colDefs: s.style ? applyColStyle(s.style, s.cols, defs) : defs };
+    });
+    setActiveCell(-1);
+  };
+
   // Öppna nivå 2 för ett band. Redigeringen sker nu i panelen (ingen flytande popover).
   // Den hopfällda verktygsmenyn (mobil) stängs samtidigt – den göms i nivå 2 och ska inte
   // stå kvar öppen när man kommer tillbaka till helheten.
-  const openBand = (i: number) => { setActive(i); setToolsOpen(false); };
+  const openBand = (i: number) => { setActive(i); setActiveCell(-1); setToolsOpen(false); };
   const backToLevel1 = () => setActive(null);
 
   // När man går in i bandredigering (nivå 2) kan man redan ha scrollat långt ner förbi den
@@ -253,10 +365,10 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const toolbarPadTop = barH > 0 ? barH + (isLg ? 24 : 12) : undefined;
   const panelPadTop = isLg && barH > 0 ? barH + 24 : undefined;
 
-  // Redigeringsläget (nivå 2) nås genom att klicka på en rad/kolumn i bilden. Bilden zoomar
-  // då in på det bandet, och man stegar mellan banden med steppern i panelhuvudet. Att lägga
-  // till en rad/kolumn sker via "Lägg till"-knapparna i helhetsvyn (de göms i det inzoomade
-  // läget) – därför ingen +-knapp i steppern.
+  // Redigeringsläget (nivå 2) nås genom att klicka på en rad/kolumn i bilden – och man byter
+  // band på samma sätt, genom att klicka på ett annat. Bilden är alltså navigeringen; panelen
+  // har inga steg mellan banden. Att lägga till en rad/kolumn sker via "Lägg till"-knapparna
+  // i helhetsvyn (de göms i det inzoomade läget).
 
   const validHandles = HANDLES;
   const handleId = validHandles.some((h) => h[0] === S.handle) ? S.handle : validHandles[0][0];
@@ -265,15 +377,16 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   // hålls kolumnerna på Form-defaultens enhetliga höjd. Se Konfigurationsval.md.
   const perColHeight = S.axis === "kolumn" && S.category === "tvbank";
   const widthCm = realW(S.cols);
-  const colHeights = S.axis === "kolumn" ? Array.from({ length: S.cols }, (_, ci) => colHeight(S, ci)) : [];
-  const heightCm = perColHeight ? cellsToCm(Math.max(1, ...colHeights)) : realH(S.rows);
+  // Kolumnernas verkliga höjd i cm (fackens höjder staplade) – möbelns höjd är den högsta.
+  const colCms = S.axis === "kolumn" ? Array.from({ length: S.cols }, (_, ci) => colCm(S, ci)) : [];
+  const heightCm = perColHeight ? Math.max(1, ...colCms) : realH(S.rows);
   // Mått för det inzoomade bandet (nivå 2). Rad: möbelns bredd × radens höjd. Kolumn: en
   // modulbredd × kolumnens höjd. null → helhetens mått (nivå 1).
   const bandDims = (() => {
     if (active === null || !stage.band) return null;
     if (S.axis === "kolumn")
       return active < S.cols
-        ? { rect: stage.band, width: `${realW(1)} cm`, height: `${perColHeight ? cellsToCm(colHeights[active]) : heightCm} cm` }
+        ? { rect: stage.band, width: `${realW(1)} cm`, height: `${perColHeight ? colCms[active] : heightCm} cm` }
         : null;
     const row = S.rows[active];
     return row ? { rect: stage.band, width: `${widthCm} cm`, height: `${row.h} cm` } : null;
@@ -315,7 +428,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const curLeg = LEGS.find((l) => l[0] === S.leg) || LEGS[0];
   const curHandle = HANDLES.find((h) => h[0] === handleId)!;
   // Summeringens värden bygger på faktiska val.
-  const colorName = displayColorName(curColor[1], S.material);
+  const colorName = curColor[1];
   const frontLabel = hasFronts(S) ? FRONT_LABEL[S.front] : null;
   const handleName = curHandle[1];
   const depthCm = 40; // Anamosa-modulernas djup
@@ -327,19 +440,22 @@ export default function Configurator({ initialState = initial, onBack }: { initi
 
   // Redigeringspanelen (nivå 2) för aktivt band. Samma innehåll på desktop (inbyggd i
   // sidopanelen) och mobil (i en overlay över grundvalen) – overlay-flaggan byter bara
-  // panelhuvudets tillbaka-affordans (pil på desktop, kryss-raden i overlayn på mobil).
+  // panelhuvudets rubrikgrad och att mobilens rad pinnas i arkets topp.
   const bandPanel = (overlay: boolean) => (
     <BandPanel
       S={S}
       index={active as number}
+      cell={activeCell}
       overlay={overlay}
-      handle={handleId}
-      onSetHandle={(v) => set({ handle: v })}
-      onSelect={setActive}
+      onSelectCell={setActiveCell}
       onEditRow={editRow}
+      onEditRowCell={editRowCell}
+      onEditColCell={editColCell}
       onEditCol={editCol}
-      onRemoveRow={(i) => { removeRow(i); backToLevel1(); }}
-      onRemoveCol={(i) => { removeCol(i); backToLevel1(); }}
+      onAddCell={addCell}
+      onRemoveCell={removeCell}
+      onResetRow={resetRow}
+      onResetCol={resetCol}
       onBack={backToLevel1}
     />
   );
@@ -360,11 +476,25 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           tilar exakt med overlayns top-[50svh] – annars trycker det globala sidhuvudet
           (ej sticky) ner bilden och overlayn glider upp över dess nederkant. Desktop och
           grundvyn behåller sticky-beteendet. */}
-      <section className={`z-20 bg-muted lg:col-span-8 lg:h-screen lg:self-start ${
-        active !== null
-          ? "fixed inset-x-0 top-0 h-[50svh] lg:sticky lg:inset-x-auto lg:top-0 lg:h-screen"
-          : "relative sticky top-0 h-[50svh]"
-      }`}>
+      <section
+        // --sheet-h: arkets innehållshöjd (mobil, nivå 2). Taket klampas här i CSS i stället
+        // för i mätningen, så svh-enheten får betyda samma sak för arket och för bilden. Före
+        // mätningen – och på desktop, där arket inte finns – gäller reservvärdet 50svh.
+        //
+        // Nederkanten sätts 24 px UNDER arkets överkant, inte i jämnhöjd med den: bilden
+        // fortsätter in bakom arket, arkets skugga faller på bilden, och det läser som ett ark
+        // som ligger ÖVER möbeln i stället för som nästa sektion under den.
+        style={{ ["--sheet-h" as string]: sheetH !== null ? `${sheetH}px` : undefined }}
+        className={`z-20 bg-muted lg:col-span-8 lg:h-screen lg:self-start ${
+          active !== null
+            // Ramen glider med SAMMA tajming som hyllans transform (duration-slow ease-default),
+            // så att den växer och kameran zoomar in som en rörelse. Görs ramen om direkt i
+            // stället blir förstoringen ett eget, momentant steg som hinner före zoomen – två
+            // händelser i följd i stället för en.
+            ? "fixed inset-x-0 top-0 bottom-[calc(min(var(--sheet-h,50svh),70svh)_-_1.5rem)] transition-[bottom] duration-slow ease-default lg:sticky lg:inset-x-auto lg:bottom-auto lg:top-0 lg:h-screen lg:transition-none"
+            : "relative sticky top-0 h-[50svh]"
+        }`}
+      >
         {/* ---- topp-rad / verktyg ---- */}
         {/* Ribban ligger fast i toppen (mobil + desktop) → verktygsraden börjar strax under
             den. På desktop ger samma offset som valpanelen att tillbaka/ikonknappar linjerar
@@ -408,11 +538,11 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           )}
           <div className="relative z-10 flex h-full items-end justify-center overflow-hidden px-8 pb-14 pt-20 md:px-16 md:pb-[120px] md:pt-28">
             {/* hyllan bottenankras 120px från nederkanten och växer uppåt */}
-            <Shelf S={S} handleId={handleId} frame={frameColor()} active={active} hovered={hovered} onHover={setHovered} onOpen={openBand} wrapRef={wrapRef} onMeasure={setStage} lift={lift} />
+            <Shelf S={S} handleId={handleId} frame={frameColor()} active={active} activeCell={activeCell} hovered={hovered} onHover={setHovered} onOpen={openBand} onOpenCell={setActiveCell} wrapRef={wrapRef} onMeasure={setStage} lift={lift} />
           </div>
           {/* Lägg-till-knapparna gäller hela möbeln och göms medan bilden är inzoomad på ett
               band (nivå 2) – där skulle de dessutom ligga utanför bild. Man lägger till rader
-              och kolumner i helhetsvyn, ett klick bort via "Gå tillbaka". */}
+              och kolumner i helhetsvyn, ett klick bort via krysset i panelhuvudet. */}
           {stage.w > 0 && active === null && (
             <>
               <AddButton className="-translate-x-1/2 translate-y-[calc(-100%-24px)]" style={{ left: stage.x + stage.w / 2, top: stage.y, transition: stageMove(stage.glide, "left", "top") }} label="Lägg till rad" onClick={() => setRows(S.rows.length + 1)} />
@@ -500,8 +630,10 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           i nivå 2 pinnas innehållet (sticky) så att en scroll nedåt inte lämnar en tom yta
           – valen följer med tills hela panelen scrollas förbi mot Tillval. */}
       <aside className="bg-card lg:col-span-4 lg:min-h-screen">
-        {/* mjuk uttoning i toppen av valen där de möter bilden – sticky vid sömmen */}
-        <div aria-hidden className="pointer-events-none sticky top-[50svh] z-30 -mb-10 h-10 bg-gradient-to-b from-card to-transparent lg:top-0" />
+        {/* Mjuk uttoning i toppen av valen där de möter bilden – sticky vid sömmen. I nivå 2
+            på mobil finns ingen sådan söm (arket ligger över valen), och remsan skulle då
+            måla en ljus rand tvärs över bildens nederkant. */}
+        <div aria-hidden className={`pointer-events-none sticky top-[50svh] z-30 -mb-10 h-10 bg-gradient-to-b from-card to-transparent lg:top-0 ${active !== null ? "hidden lg:block" : ""}`} />
         <div
           className={`p-4 pb-6 lg:p-6 lg:pb-6 ${active !== null ? "lg:sticky lg:top-0" : ""}`}
           style={panelPadTop !== undefined ? { paddingTop: panelPadTop } : undefined}
@@ -561,12 +693,23 @@ export default function Configurator({ initialState = initial, onBack }: { initi
               onSet={(v) => set({ material: v as State["material"], color: COLORS[v as State["material"]][0][0] })}
             />
             <MaterialPicker colors={COLORS[S.material]} value={S.color} onSet={(color) => set({ color })} />
-            <SelectionCopy title={displayColorName(curColor[1], S.material)} desc={curColor[2]} />
+            <SelectionCopy title={curColor[1]} desc={curColor[2]} />
           </PanelSection>
 
           {hasFronts(S) && (
             <PanelSection title="Frontstil">
-              <FrontPicker value={S.front} onSet={(front) => setS((s) => ({ ...s, front, rows: s.rows.map((row) => ({ ...row, front, cells: row.cells?.map((c) => ({ ...c, front })) })) }))} />
+              {/* Global frontstil skriver om alla fronter – även per-fack-satta (rader och kolumner). */}
+              <FrontPicker
+                value={S.front}
+                onSet={(front) =>
+                  setS((s) => ({
+                    ...s,
+                    front,
+                    rows: s.rows.map((row) => ({ ...row, front, cells: row.cells?.map((c) => ({ ...c, front })) })),
+                    colDefs: s.colDefs?.map((d) => (d.cells ? { ...d, cells: d.cells.map((c) => ({ ...c, front })) } : d)),
+                  }))
+                }
+              />
               <SelectionCopy title={FRONT_LABEL[S.front]} desc={frontDescription(S.front)} />
             </PanelSection>
           )}
@@ -582,12 +725,17 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       </aside>
     </main>
 
-    {/* Mobil: redigeringen (nivå 2) som overlay över grundvalen. Ligger under den sticky
-        bilden (top-[50svh]) så man ser bygget uppdateras. Rundade topphörn och ett
-        stängkryss i panelhuvudet (i BandStepper) längst till höger. */}
+    {/* Mobil: redigeringen (nivå 2) som ark underifrån. Det är så högt som valen kräver –
+        inte halva skärmen – och bilden ovanför får resten (se --sheet-h). Taket på 70svh är
+        vad som hindrar ett långt ark från att kväva bilden; däröver scrollar arket i sig. */}
     {active !== null && (
-      <div className="no-scrollbar sheet-enter fixed inset-x-0 bottom-0 top-[50svh] z-50 overflow-y-auto rounded-t-2xl bg-card shadow-[0_-8px_24px_rgba(0,0,0,0.12)] lg:hidden">
-        <div className="px-4 pb-8">
+      <div
+        // Höjden sätts explicit till innehållets mått – `auto` går inte att animera. Taket
+        // ligger kvar i max-h, så överskjutande innehåll scrollar i stället för att växa.
+        style={{ height: sheetH ?? undefined }}
+        className="no-scrollbar sheet-enter fixed inset-x-0 bottom-0 z-50 max-h-[70svh] overflow-y-auto rounded-t-2xl bg-card shadow-[0_-8px_24px_rgba(0,0,0,0.12)] transition-[height] duration-slow ease-default lg:hidden"
+      >
+        <div ref={sheetRef} className="px-4 pb-8">
           {bandPanel(true)}
         </div>
       </div>
@@ -656,20 +804,32 @@ const DELIVERY = {
 } as const;
 type DeliveryKey = keyof typeof DELIVERY;
 
+// Fronten i löptext, singular och plural – "Ribbor" är en stil, inte ett adjektiv, så
+// etiketterna kan inte klistras rakt in i en mening.
+const FRONT_PHRASE: Record<Front, string> = { plain: "slät front", slats: "ribbad front", glass: "glasfront" };
+const FRONT_PHRASE_PL: Record<Front, string> = { plain: "släta fronter", slats: "ribbade fronter", glass: "glasfronter" };
+
 // Nedbrytning per band (rad eller kolumn) till summeringens specifikation: höjd + vad
 // bandet innehåller (luckor, lådor, öppna fack med ev. hyllplan, samt frontstil).
 function bandBreakdown(S: State): { title: string; desc: string }[] {
-  const frontWord: Record<Front, string> = { plain: "släta fronter", slats: "ribbade fronter", glass: "glasfronter" };
-  const describe = (cells: { type: CellType; front: Front }[], shelves: number, heightCm: number) => {
+  // Hyllplanen räknas ur facken själva (de sätts per fack), inte ur ett bandvärde. Har alla
+  // öppna fack lika många säger vi det per fack ("med 1 hyllplan var") – annars summan, så
+  // "4 öppna fack med 4 hyllplan" inte läses som fyra hyllplan i varje.
+  const describe = (cells: { type: CellType; front: Front; shelves: number }[], heightCm: number) => {
     const l = cells.filter((c) => c.type === "l").length;
     const d = cells.filter((c) => c.type === "d").length;
-    const o = cells.filter((c) => c.type === "o").length;
+    const open = cells.filter((c) => c.type === "o");
+    const o = open.length;
+    const each = open.every((c) => c.shelves === open[0]?.shelves) ? open[0]?.shelves ?? 0 : null;
+    const total = open.reduce((a, c) => a + c.shelves, 0);
+    const shelfPart =
+      total === 0 ? "" : each !== null ? ` med ${each} hyllplan${o > 1 ? " var" : ""}` : ` med ${total} hyllplan totalt`;
     const parts: string[] = [];
     if (l) parts.push(`${l} ${l === 1 ? "lucka" : "luckor"}`);
     if (d) parts.push(`${d} ${d === 1 ? "låda" : "lådor"}`);
-    if (o) parts.push(`${o} öppna fack${shelves ? ` med ${shelves} hyllplan` : ""}`);
+    if (o) parts.push(`${o} ${o === 1 ? "öppet fack" : "öppna fack"}${shelfPart}`);
     const fronts = [...new Set(cells.filter((c) => c.type !== "o").map((c) => c.front))];
-    if (fronts.length === 1) parts.push(frontWord[fronts[0]]);
+    if (fronts.length === 1) parts.push(l + d === 1 ? FRONT_PHRASE[fronts[0]] : FRONT_PHRASE_PL[fronts[0]]);
     else if (fronts.length > 1) parts.push("blandade fronter");
     return `${heightCm} cm · ${parts.join(", ") || "öppet"}`;
   };
@@ -677,14 +837,16 @@ function bandBreakdown(S: State): { title: string; desc: string }[] {
     return Array.from({ length: S.cols }, (_, ci) => {
       const def = S.colDefs?.[ci] ?? { doors: "none" as Amount, drawers: "none" as Amount };
       const n = colHeight(S, ci);
-      const cells = fillColumn(def, n).map((type) => ({ type, front: S.front }));
-      return { title: `Kolumn ${ci + 1}`, desc: describe(cells, def.shelves ?? 0, cellsToCm(n)) };
+      return { title: `Kolumn ${ci + 1}`, desc: describe(colCells(def, n, S.front), colCm(S, ci)) };
     });
   }
-  return S.rows.map((row, i) => ({
-    title: `Rad ${i + 1}`,
-    desc: describe(rowCells(row, S.cols).map((c) => ({ type: c.type, front: c.front })), row.shelves, row.h),
-  }));
+  // Raderna räknas nerifrån, så listan vänds för att läsas 1, 2, 3 uppåt.
+  return S.rows
+    .map((row, i) => ({
+      title: `Rad ${stackNo(i, S.rows.length)}`,
+      desc: describe(rowCells(row, S.cols), row.h),
+    }))
+    .reverse();
 }
 
 function Summary({
@@ -741,10 +903,11 @@ function Summary({
   // nedbrytning per rad/kolumn – vad som ingår i varje band.
   const bands = bandBreakdown(S);
   const bandsTitle = S.axis === "kolumn" ? "Kolumner" : "Rader";
-  // löptext med alla val: färg, ev. front, beslag och mått.
+  // löptext med alla val: färg, ev. front, beslag och mått. Fronten böjs efter substantivet
+  // ("Ribbor" → ribbad front), annars blir uppräkningen ogrammatisk.
   const specs = [
     colorName,
-    frontLabel ? `${frontLabel.toLowerCase()} front` : null,
+    S.front && frontLabel ? FRONT_PHRASE[S.front] : null,
     frontLabel ? handleName.toLowerCase() : null,
     dims,
   ].filter(Boolean).join(", ");
@@ -804,7 +967,7 @@ function Summary({
                 <CartRow
                   thumb={<div className="flex h-14 w-14 shrink-0 items-center justify-center bg-secondary"><Truck size={22} /></div>}
                   name={DELIVERY[delivery].label}
-                  desc={delivery === "montering" ? "Leverans och montering hemma" : "Leverans hem till dörren"}
+                  desc={delivery === "montering" ? "Vi kör hem den och monterar på plats" : "Vi kör hem den till din dörr"}
                   price={formatKr(deliveryCost)}
                   onRemove={() => setDelivery(null)}
                 />
@@ -869,7 +1032,7 @@ function Summary({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="flex w-4 shrink-0 items-center justify-center"><Truck size={14} /></span>
-                  <Text variant="body" className="flex-1">Levereras inom 2–4 veckor, från 49:-</Text>
+                  <Text variant="body" className="flex-1">Levereras inom 2–4 veckor</Text>
                 </div>
               </div>
             </div>
@@ -1431,6 +1594,12 @@ function Dims({ rect, glide, width, height }: { rect: Rect; glide: boolean; widt
 }
 
 /* ---------- scen: golv, vägg, skuggor och enkel rumsdekor (växt + lampa) ---------- */
+// Möbelns egna skuggor (mot väggen och mot golvet) är avstängda tills vidare: de hänger på
+// hyllans rektangel och måste därför följa varje kamerarörelse, vilket rör till inzoomningen
+// mot ett band. Rummets egna skuggor (vägg möter golv) sitter på golvlinjen och berörs inte.
+// Sätt till true för att ta tillbaka dem.
+const MODEL_SHADOW = false;
+
 function Scene({ stage, floorY, plantPx, plantLeft, lampPx, lampLeft, showRoom, lift = 0 }: {
   stage: Stage;
   floorY: number; plantPx: number; plantLeft: number; lampPx: number; lampLeft: number; showRoom: boolean;
@@ -1459,15 +1628,19 @@ function Scene({ stage, floorY, plantPx, plantLeft, lampPx, lampLeft, showRoom, 
           {/* mjuk skugga där vägg möter golv */}
           <div className="absolute inset-x-0" style={{ top: floorY - 30, height: 30, background: "linear-gradient(180deg,transparent,rgba(0,0,0,0.06))", transition: move("top") }} />
           {/* hyllans skugga mot väggen */}
-          <div className="absolute" style={{ left: stage.x, top: stage.y, width: stage.w, height: stage.h, boxShadow: "44px 22px 60px rgba(0,0,0,0.11)", transition: move("left", "top", "width", "height") }} />
+          {MODEL_SHADOW && (
+            <div className="absolute" style={{ left: stage.x, top: stage.y, width: stage.w, height: stage.h, boxShadow: "44px 22px 60px rgba(0,0,0,0.11)", transition: move("left", "top", "width", "height") }} />
+          )}
           {/* enkel rumsdekor för känsla och skala */}
           {plantPx > 0 && <PottedPlant style={{ left: plantLeft, top: floorY - plantPx, height: plantPx, transition: move("left", "top", "height") }} />}
           {lampPx > 0 && <FloorLamp style={{ left: lampLeft, top: floorY - lampPx, height: lampPx, transition: move("left", "top", "height") }} />}
         </>
       )}
-      {/* kontaktskugga mot golvet (alltid – förankrar hyllan). Väggmonterad: mjukare,
-          diffusare skugga eftersom hyllan hänger en bit ovanför golvet. */}
-      <div className="absolute" style={{ left: cx - (stage.w * 1.04) / 2, top: floorY - 6, width: stage.w * 1.04, height: 20, background: `radial-gradient(ellipse at center, rgba(0,0,0,${lift > 0 ? 0.1 : 0.22}) 0%, transparent 72%)`, filter: lift > 0 ? "blur(5px)" : "blur(2px)", transition: move("left", "top", "width", "filter") }} />
+      {/* kontaktskugga mot golvet (förankrar hyllan). Väggmonterad: mjukare, diffusare skugga
+          eftersom hyllan hänger en bit ovanför golvet. */}
+      {MODEL_SHADOW && (
+        <div className="absolute" style={{ left: cx - (stage.w * 1.04) / 2, top: floorY - 6, width: stage.w * 1.04, height: 20, background: `radial-gradient(ellipse at center, rgba(0,0,0,${lift > 0 ? 0.1 : 0.22}) 0%, transparent 72%)`, filter: lift > 0 ? "blur(5px)" : "blur(2px)", transition: move("left", "top", "width", "filter") }} />
+      )}
     </div>
   );
 }
@@ -1540,15 +1713,11 @@ function StyleCards({ S, onPick }: { S: State; onPick: (id: string) => void }) {
   );
 }
 
-function displayColorName(name: string, material: State["material"]) {
-  if (material === "ek" && name === "Naturlig ek") return "Ljusbetsad ek";
-  return material === "laminat" ? `Laminat ${name}` : name;
-}
-
+// Kundtexter enligt valen/Konfigurationsval.md.
 function frontDescription(front: Front) {
-  if (front === "plain") return "En lugn, slät front utan struktur.";
-  if (front === "slats") return "Ribbad front med tydlig träkänsla och mer skugga.";
-  return "Glasfront för en lättare vitrinkänsla.";
+  if (front === "plain") return "En lugn, slät front utan struktur – lätt att matcha med annat.";
+  if (front === "slats") return "Vertikala ribbor som ger relief och en varm, taktil yta.";
+  return "Klarglas som visar upp innehållet – för det du vill lyfta fram.";
 }
 
 /* ---------- skiss ---------- */
@@ -1591,6 +1760,11 @@ const NO_CAM: Cam = { z: 1, x: 0, y: 0 };
 // Hur stor del av ramen det fokuserade bandet får ta, och tak för inzoomningen. Taket finns
 // för smala band: en enda kolumn i ett litet bygg skulle annars zoomas till oigenkännlighet.
 const FOCUS_FILL = 0.86, FOCUS_MAX = 2.6;
+// Fackfokus: hur långt kameran går från bandet mot det valda facket (0 = bandet, 1 = facket)
+// och hur mycket mer den som mest får zooma än bandet. Låga tal med flit – det ska läsas som
+// en betoning, inte som att vyn byter motiv.
+const CELL_PULL = 0.45, CELL_ZOOM_MAX = 1.3;
+
 // Kamerans avbildning av en rektangel: skala kring golvpunkten `o`, förskjut sedan.
 const viaCam = (r: Rect, o: { x: number; y: number }, c: Cam): Rect => ({
   x: o.x + c.x + c.z * (r.x - o.x),
@@ -1612,8 +1786,11 @@ function offsetIn(el: HTMLElement, root: HTMLElement) {
   return { x, y };
 }
 
-function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, onMeasure, lift = 0 }: {
+function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, onOpen, onOpenCell, wrapRef, onMeasure, lift = 0 }: {
   S: State; handleId: string; frame: string; active: number | null; hovered: number | null;
+  // activeCell/onOpenCell: facket som redigeras i det aktiva bandet. Facken går att välja
+  // direkt i bilden (samma val som flikarna i panelen) och det valda får en ring.
+  activeCell?: number; onOpenCell?: (i: number) => void;
   onHover: (i: number | null) => void; onOpen: (i: number) => void;
   wrapRef: React.RefObject<HTMLDivElement>; onMeasure: (r: Stage) => void;
   // px som hyllan lyfts från golvlinjen (väggmonterad hänger på väggen)
@@ -1631,6 +1808,9 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
   const [cam, setCam] = useState<Cam>(NO_CAM);
   // ett element per band (rad eller kolumn) – kameran mäter det fokuserade bandet härifrån
   const bandRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // ett element per fack i det band som redigeras (facklagret nedan) – kameran mäter det
+  // valda facket härifrån. Bara det aktiva bandet har ett facklager, så listan gäller det.
+  const cellRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const reported = useRef<{ rect: Rect; band: Rect | null; z: number }>({ rect: { x: 0, y: 0, w: 0, h: 0 }, band: null, z: 1 });
   // Redigerar man ETT band (nivå 2) fryses bildens INPASSNING: ingen omskalning av ramen.
   // Bara kameran rör sig – annars känns det som att hela bilden ändras för mycket vid varje
@@ -1682,6 +1862,14 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     const o = offsetIn(el, root);
     return { x: base.x + o.x * scale, y: base.y + o.y * scale, w: el.offsetWidth * scale, h: el.offsetHeight * scale };
   };
+  // Det valda fackets rektangel, mätt som bandets. `isConnected` sållar bort refar som
+  // ligger kvar från ett band med fler fack än det man ser nu.
+  const cellRect = (base: Rect, i: number): Rect | null => {
+    const el = cellRefs.current[i], root = shelfRef.current;
+    if (!el || !root || !el.isConnected) return null;
+    const o = offsetIn(el, root);
+    return { x: base.x + o.x * scale, y: base.y + o.y * scale, w: el.offsetWidth * scale, h: el.offsetHeight * scale };
+  };
   // Rapportera hyllans (och det fokuserade bandets) rektangel efter kameran – scenen (golv,
   // skugga, dekor), plus-knapparna och måttlinjerna placeras alla från den.
   const reportRef = useRef<() => void>(() => {});
@@ -1700,7 +1888,8 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     onMeasure({ ...rect, z: cam.z, band, glide });
   };
   // Ställ kameran mot det fokuserade bandet: zooma så bandet fyller FOCUS_FILL av ramen och
-  // lägg dess mitt i ramens mitt. Utan fokus (nivå 1) går kameran tillbaka till identitet.
+  // lägg dess mitt i ramens mitt. Är ett enskilt fack valt förskjuts målet en bit mot facket
+  // (se CELL_PULL). Utan fokus (nivå 1) går kameran tillbaka till identitet.
   const focusRef = useRef<() => void>(() => {});
   focusRef.current = () => {
     if (active === null) {
@@ -1710,11 +1899,22 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
     const g = geomRef.current();
     const b = g && bandRect(g.base, active);
     if (!g || !b || b.w <= 0 || b.h <= 0) return;
-    const z = Math.max(1, Math.min(FOCUS_MAX, (g.frame.w * FOCUS_FILL) / b.w, (g.frame.h * FOCUS_FILL) / b.h));
+    const fit = (r: Rect) => Math.max(1, Math.min(FOCUS_MAX, (g.frame.w * FOCUS_FILL) / r.w, (g.frame.h * FOCUS_FILL) / r.h));
+    let z = fit(b), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    // Väljer man ETT fack kryper kameran en bit vidare mot det – tillräckligt för att man ska
+    // se vilket fack valen gäller, men inte hela vägen: bandet runt omkring är det som ger
+    // facket sitt sammanhang, och ett fullt omtag vid varje flikbyte skulle bli rastlöst.
+    // "Alla"-fliken (activeCell < 0) håller kvar bandet i bild.
+    const c = activeCell >= 0 ? cellRect(g.base, activeCell) : null;
+    if (c && c.w > 0 && c.h > 0) {
+      z = Math.min(z + (fit(c) - z) * CELL_PULL, z * CELL_ZOOM_MAX);
+      cx += (c.x + c.w / 2 - cx) * CELL_PULL;
+      cy += (c.y + c.h / 2 - cy) * CELL_PULL;
+    }
     const next: Cam = {
       z,
-      x: g.frame.x + g.frame.w / 2 - g.origin.x - z * (b.x + b.w / 2 - g.origin.x),
-      y: g.frame.y + g.frame.h / 2 - g.origin.y - z * (b.y + b.h / 2 - g.origin.y),
+      x: g.frame.x + g.frame.w / 2 - g.origin.x - z * (cx - g.origin.x),
+      y: g.frame.y + g.frame.h / 2 - g.origin.y - z * (cy - g.origin.y),
     };
     setCam((c) => (Math.abs(c.z - next.z) < 0.002 && Math.abs(c.x - next.x) < 0.5 && Math.abs(c.y - next.y) < 0.5 ? c : next));
   };
@@ -1794,7 +1994,7 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
   }, [S.cols, S.rows, S.colDefs, lift, editing]);
   // Kameran ställs om när fokus byts (klick/steppern) och när bandets mått ändras medan man
   // redigerar det (t.ex. ny radhöjd) – då följer inzoomningen med bandet.
-  useLayoutEffect(() => { focusRef.current(); }, [active, scale, lift, S.cols, S.rows, S.colDefs, S.axis, S.category]);
+  useLayoutEffect(() => { focusRef.current(); }, [active, activeCell, scale, lift, S.cols, S.rows, S.colDefs, S.axis, S.category]);
   // Ny scale/lift/kamera committad → rapportera det nya MÅLET direkt (se reportRef ovan).
   // Scenen får samma tajming som hyllans transform-transition och glider därför i takt med
   // den, istället för att starta när hyllan redan är framme.
@@ -1818,6 +2018,45 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
   bandRefs.current.length = bandCount;
   const bandRef = (i: number) => (el: HTMLDivElement | null) => { bandRefs.current[i] = el; };
 
+  // Facklager: läggs bara på det band som redigeras (nivå 2) och gör varje fack valbart –
+  // samma val som flikarna i panelen. Ligger som ett eget lager ovanpå kuberna i stället för
+  // att göra kuberna klickbara, så möbelns ritning hålls fri från gränssnitt. `inset` följer
+  // bandets ev. egna padding (TV-möbelns kolumnstommar), och storleken (flex/height) speglar
+  // kuberna under så rutorna hamnar exakt över facken.
+  // Ett band med ett enda fack behöver inget lager: bandets egen ring markerar redan facket,
+  // och det finns inget att välja mellan.
+  const cellLayer = (cells: Cell[], dir: "row" | "col", inset: string, size: (c: Cell, i: number) => React.CSSProperties) => cells.length < 2 ? null : (
+    <div className={`pointer-events-none absolute ${inset} z-10 flex gap-1.5 ${dir === "col" ? "flex-col" : ""}`}>
+      {cells.map((c, i) => {
+        // Överstrykningen pekar ut ETT fack. På "Alla"-fliken (activeCell < 0) markeras inget
+        // fack alls – då gäller valen hela bandet, och det säger bandets egen ring redan.
+        // Gulmålade man samtliga fack där skulle markeringen sluta betyda "det här facket".
+        const marked = activeCell === i;
+        return (
+          <button
+            key={i}
+            ref={(el) => { cellRefs.current[i] = el; }}
+            type="button"
+            aria-label={`Fack ${dir === "col" ? stackNo(i, cells.length) : i + 1}`}
+            aria-pressed={marked}
+            onClick={(e) => { e.stopPropagation(); onOpenCell?.(i); }}
+            style={size(c, i)}
+            // Gul yta ÖVER hela facket, inte en ram runt det: ramen låg tätt intill bandets
+            // egen ring och blev svår att skilja från den, och på ett litet fack syns en
+            // 2 px-kontur knappt alls. Alfat hålls nere så hyllplan och handtag under syns.
+            //
+            // Genomskinlighet, inte mix-blend-multiply. Blandning kräver att lagret INTE har
+            // z-index (en stapelkontext ger den ingen bakgrund att blanda mot) – men utan
+            // z-index tar bandet under emot klicken och facken går inte att välja i bilden.
+            className={`pointer-events-auto cursor-pointer transition-colors duration-base ${
+              marked ? "bg-[rgba(255,209,0,0.42)]" : "hover:bg-[rgba(255,209,0,0.18)]"
+            }`}
+          />
+        );
+      })}
+    </div>
+  );
+
   return (
     <div ref={shelfRef} className={`relative flex flex-col gap-1.5 p-1.5 ${animate ? "transition-[transform,background-color] duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z}) translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / (scale * cam.z) }}>
       {perCol ? (
@@ -1825,7 +2064,10 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
         <div className="flex items-end gap-1.5">
           {Array.from({ length: S.cols }, (_, ci) => {
             const def = S.colDefs?.[ci] ?? { doors: "none" as Amount, drawers: "none" as Amount };
-            const types = fillColumn(def, colHeight(S, ci));
+            const cells = colCells(def, colHeight(S, ci), S.front);
+            // Facken kan ha egen höjd här (kolumnerna är egna stommar, golvjusterade) – en
+            // hög öppning för TV:n bland lägre fack.
+            const cubeH = (k: number) => ((cells[k].h ?? 40) / 40) * U;
             return (
               <div
                 key={ci}
@@ -1836,10 +2078,12 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
                 className={`group relative flex cursor-pointer flex-col gap-1.5 p-1.5 outline transition-[outline-color] duration-base ${bandRing(ci)}`}
                 style={{ background: frame, ...ringStyle }}
               >
-                {types.map((t, k) => (
-                  <Cube key={k} type={t} front={S.front} shelves={t === "o" ? def.shelves ?? 0 : 0} span={1} color={S.color} handle={handleId} frame={frame} sizeStyle={{ height: U, width: U }} />
+                {cells.map((c, k) => (
+                  <Cube key={k} type={c.type} front={c.front} shelves={c.shelves} span={1} color={S.color} handle={handleId} frame={frame} sizeStyle={{ height: cubeH(k), width: U }} />
                 ))}
-                {active !== ci && <EditPill onClick={() => onOpen(ci)} />}
+                {active === ci
+                  ? cellLayer(cells, "col", "inset-1.5", (_c, k) => ({ height: cubeH(k), width: U }))
+                  : <EditPill onClick={() => onOpen(ci)} />}
               </div>
             );
           })}
@@ -1861,7 +2105,9 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
                 const c = grid[ri][ci];
                 return <Cube key={ri} type={c.type} front={c.front} shelves={c.shelves} span={1} color={S.color} handle={handleId} frame={frame} sizeStyle={{ height: (row.h / 40) * U, width: "100%" }} />;
               })}
-              {active !== ci && <EditPill onClick={() => onOpen(ci)} />}
+              {active === ci
+                ? cellLayer(S.rows.map((_, ri) => grid[ri][ci]), "col", "inset-0", (_c, k) => ({ height: (S.rows[k].h / 40) * U, width: "100%" }))
+                : <EditPill onClick={() => onOpen(ci)} />}
             </div>
           ))}
         </div>
@@ -1877,7 +2123,9 @@ function Shelf({ S, handleId, frame, active, hovered, onHover, onOpen, wrapRef, 
             style={{ height: (row.h / 40) * U, ...ringStyle }}
           >
             {grid[ri].map((c, ci) => <Cube key={ci} type={c.type} front={c.front} shelves={c.shelves} span={c.span} color={S.color} handle={handleId} frame={frame} />)}
-            {active !== ri && <EditPill onClick={() => onOpen(ri)} />}
+            {active === ri
+              ? cellLayer(grid[ri], "row", "inset-0", (c) => ({ flex: c.span }))
+              : <EditPill onClick={() => onOpen(ri)} />}
           </div>
         ))
       )}
@@ -1913,8 +2161,18 @@ export function Cube({ type, front, shelves, span, color, handle, frame, sizeSty
   if (type === "o") {
     return (
       <div className="relative" style={{ ...style, background: "#fff", boxShadow: "inset 0 0 0 1px rgba(0,0,0,.07)" }}>
+        {/* Hyllplanen delar facket i lika höga rum, så de sitter på i/(n+1) av höjden – och
+            CENTRERAS på den linjen (marginTop = halva tjockleken), annars blir rummet under
+            det nedersta hyllplanet tunnare än de andra.
+            `top` animeras: lägger man till ett hyllplan flyttar de befintliga sig till sina
+            nya lägen, och utan övergång hoppar de dit medan det nya tonas in – två olika
+            beteenden i samma rörelse, vilket läser som ett fel. */}
         {Array.from({ length: shelves }, (_, i) => i + 1).map((i) => (
-          <div key={i} className="copy-enter absolute left-0 right-0 transition-colors duration-slow" style={{ top: `${(i / (shelves + 1)) * 100}%`, height: 3, background: frame, boxShadow: "0 0 0 1px rgba(0,0,0,.1)" }} />
+          <div
+            key={i}
+            className="copy-enter absolute left-0 right-0 transition-[top,background-color] duration-slow ease-default"
+            style={{ top: `${(i / (shelves + 1)) * 100}%`, marginTop: -1.5, height: 3, background: frame, boxShadow: "0 0 0 1px rgba(0,0,0,.1)" }}
+          />
         ))}
       </div>
     );
@@ -1986,54 +2244,46 @@ export function Legs({ S }: { S: State; frame: string }) {
 
 /* ---------- nivå 2: bandredigering i panelen ---------- */
 
-// Panelhuvud i redigeringsläget (nivå 2). Rubrik "Rad N av M" med runda ‹ ›-steg för att
-// bläddra mellan banden. Stäng-affordansen skiljer sig mellan lägena:
-//  • desktop (overlay=false): en svart "Gå tillbaka"-knapp överst tar tillbaka till hela möbeln.
-//  • mobil (overlay=true): ett kryss längst till höger stänger overlayn (ingen tillbaka-knapp).
-function BandStepper({ count, index, isCol, overlay = false, onSelect, onBack }: {
-  count: number; index: number; isCol: boolean; overlay?: boolean;
-  onSelect: (i: number) => void; onBack: () => void;
+// Panelhuvud i redigeringsläget (nivå 2). Rubriken säger VAD man redigerar, inte vilket i
+// ordningen – den delen står bredvid som en dämpad räknare. Uppdelningen gör rubriken sig lik
+// oavsett band, och håller ändå kvar svaret på "vilken av dem är jag i?", som annars bara går
+// att läsa ur bilden. Bytet av band sker fortfarande genom att klicka på ett annat i bilden.
+// Samma stäng-affordans i båda lägena: ett kryss längst till höger på rubrikraden. Skillnaden
+// är bara rubrikens grad och att mobilens rad är sticky i arket.
+function BandHeader({ index, count, isCol, overlay = false, onBack }: {
+  index: number; count: number; isCol: boolean; overlay?: boolean; onBack: () => void;
 }) {
-  const noun = isCol ? "Kolumn" : "Rad";
-  // Runda, ljusgrå ikonknappar (‹ › och ✕) – samma neutrala yta som segmentkontrollerna.
-  const roundBtn = "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground transition-colors duration-fast hover:bg-[oklch(0.91_0_0)] disabled:pointer-events-none disabled:opacity-40";
-  const stepper = (
-    <div className="flex items-center gap-2">
-      <button onClick={() => onSelect(index - 1)} disabled={index <= 0} aria-label={`Föregående ${noun.toLowerCase()}`} className={roundBtn}>
-        <ChevronLeft size={20} />
-      </button>
-      <button onClick={() => onSelect(index + 1)} disabled={index >= count - 1} aria-label={`Nästa ${noun.toLowerCase()}`} className={roundBtn}>
-        <ChevronRight size={20} />
-      </button>
-    </div>
+  const title = isCol ? "Kolumninnehåll" : "Radinnehåll";
+  // Kolumner räknas från vänster, rader nerifrån – samma regel som facken och sammanfattningen.
+  const no = isCol ? index + 1 : stackNo(index, count);
+  // Räknaren är en del av rubriken, inte ett tillägg bredvid den – samma storlek, färg och
+  // vikt. Som eget textelement fick den brödtextens grad, och rubrikraden två olika storlekar.
+  const counter = `${no} av ${count}`;
+
+  const close = (
+    <button
+      onClick={onBack}
+      aria-label="Stäng"
+      className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground transition-colors duration-fast hover:bg-[oklch(0.91_0_0)]"
+    >
+      <X size={20} />
+    </button>
   );
 
+  // Mobil: rubrikraden pinnas i arkets topp så krysset är nåbart även när valen scrollar.
   if (overlay) {
-    // Mobil overlay: rubrik + steg till vänster, stängkryss längst till höger.
     return (
       <div className="sticky top-0 z-10 -mx-4 mb-6 flex items-center gap-4 bg-card px-4 pb-4 pt-4">
-        <Heading level="h3" className="shrink-0 whitespace-nowrap leading-none">{noun} {index + 1} av {count}</Heading>
-        {stepper}
-        <button onClick={onBack} aria-label="Stäng" className={`ml-auto ${roundBtn}`}>
-          <X size={20} />
-        </button>
+        <Heading level="h3" className="min-w-0 leading-none">{title} {counter}</Heading>
+        {close}
       </div>
     );
   }
 
-  // Desktop: svart "Gå tillbaka"-knapp överst, sedan stor rubrik med steg bredvid.
   return (
-    <div className="mb-8">
-      <button onClick={onBack} className="group mb-6 flex items-center gap-3">
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity duration-fast group-hover:opacity-90">
-          <ArrowLeft size={14} />
-        </span>
-        <Text variant="body" className="font-semibold">Gå tillbaka</Text>
-      </button>
-      <div className="flex items-center gap-4">
-        <Heading level="h2" className="whitespace-nowrap text-[22px] leading-none lg:text-[2rem]">{noun} {index + 1} av {count}</Heading>
-        {stepper}
-      </div>
+    <div className="mb-8 flex items-center gap-4">
+      <Heading level="h2" className="min-w-0 text-[22px] leading-none lg:text-[2rem]">{title} {counter}</Heading>
+      {close}
     </div>
   );
 }
@@ -2054,25 +2304,246 @@ function BandMsg({ children }: { children: React.ReactNode }) {
   return <Text variant="small" className="-mt-2 mb-6 text-muted-foreground">{children}</Text>;
 }
 
-const AMOUNT_OPTS: [string, string][] = (["none", "some", "max"] as Amount[]).map((a) => [a, AMOUNT_LABEL[a]]);
+const CELL_LABEL: Record<CellType, string> = { o: "Öppet", d: "Låda", l: "Lucka" };
+// Låda före lucka, som i skissen. Fack som är för höga för en låda får inte alternativet
+// alls – villkoren visas genom vilka val som finns, inte i text.
+const cellOpts = (drawers: boolean): [string, string][] =>
+  (drawers ? (["o", "d", "l"] as CellType[]) : (["o", "l"] as CellType[])).map((t) => [t, CELL_LABEL[t]]);
+
+// Gemensamt värde för de fack en flik styr – skiljer de sig är inget förvalt ("") och nästa
+// klick sätter alla. Används av "Alla"-fliken, som kan omfatta olikt möblerade fack.
+function same<T>(vals: T[]): T | "" {
+  return vals.every((v) => v === vals[0]) ? vals[0] : "";
+}
+
+// Etikett till vänster, val till höger – men bara så länge valen får plats på en rad. Panelen
+// är olika bred på olika ställen (smalast i desktopens sidokolumn), så det avgörs av utrymmet,
+// inte av skärmbredden: `min-w-max` gör att knappraden vägrar krympa, och då flyttar `flex-wrap`
+// ner hela raden under etiketten i stället för att bryta knapparna i flera våningar.
+// Etikettens fasta bredd håller knapparna på samma x när raderna ligger sida vid sida.
+function FackRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <Text variant="body" className="w-20 shrink-0 font-semibold">{label}</Text>
+      <div className="min-w-max flex-1">{children}</div>
+    </div>
+  );
+}
+
+// Vertikala staplar räknas nerifrån och upp: det som står på golvet är nummer 1, så som man
+// läser en hylla. Modellen lagrar dem uppifrån och ner (listorna ritas i samma ordning som de
+// staplas), så numret är alltid en spegling av indexet – aldrig indexet självt. Vågräta band
+// räknas från vänster och rör inte den här funktionen.
+function stackNo(i: number, count: number) {
+  return count - i;
+}
+
+// Flikar för bandets fack. Raden växer med antalet fack, så ett brett band får fler flikar
+// utan att layouten byter form. Först ligger "Alla" – snabbvägen till ett enhetligt band –
+// därefter ett fack i taget. Den valda fliken sitter ihop med boxen under: valen därinne
+// gäller just den fliken. Formen är knapparnas (4 px hörn enligt DESIGN.md) så flikarna hör
+// ihop med resten av valen i stället för att bli en egen, kantigare figur.
+// onAdd: bandet äger sitt eget fackantal och kan få ett fack till. Saknas den kommer antalet
+// från ett globalt val (bredden i radläge, höjden i vanliga kolumner) och ska inte ändras här.
+function FackTabs({ count, index, bottomUp = false, onAdd, onSelect, children }: {
+  count: number; index: number; bottomUp?: boolean; onAdd?: () => void;
+  onSelect: (i: number) => void; children: React.ReactNode;
+}) {
+  // "Alla" är meningslös på ett band med ett enda fack – då är den samma sak som fack 1.
+  // Rubriken säger redan "Fack", så flikarna bär bara sitt nummer: kortare flikar betyder att
+  // fler ryms utan att raden behöver scrollas.
+  // Numren stiger alltid åt höger i flikraden. I en stapel (bottomUp) betyder det att raden
+  // börjar i botten av bandet och går uppåt, så flikordningen är motsatt modellens.
+  const tabs: [number, string][] = [
+    ...(count > 1 ? ([[-1, "Alla"]] as [number, string][]) : []),
+    ...Array.from({ length: count }, (_, n) =>
+      [bottomUp ? stackNo(n, count) - 1 : n, `${n + 1}`] as [number, string]),
+  ];
+  // Flikarna ligger alltid på EN rad (breda band scrollar i sidled) – radbryts de tappar
+  // sömmen mot boxen sin mening. Väljer man ett fack i bilden i stället för i flikraden
+  // kan dess flik ligga utanför vy: rulla då fram den.
+  const strip = useRef<HTMLDivElement>(null);
+  const pos = tabs.findIndex(([i]) => i === index);
+  useEffect(() => {
+    if (pos >= 0) strip.current?.children[pos]?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [pos]);
+  return (
+    <div className="mb-6">
+      <Text variant="body" className="mb-2 block font-semibold">Fack</Text>
+      {/* Plusknappen ligger UTANFÖR den scrollande fliklistan – annars glider den ur bild
+          precis när man har många fack, alltså när man behöver den. Den är inte heller en
+          flik (role="tab"), så piltangenterna i fliklistan hoppar inte in i den. */}
+      <div className="relative z-10 flex items-stretch gap-1">
+        <div ref={strip} role="tablist" aria-label="Fack" className="no-scrollbar flex min-w-0 gap-1 overflow-x-auto">
+          {tabs.map(([i, label]) => {
+            const sel = i === index;
+            return (
+              <button
+                key={i}
+                type="button"
+                role="tab"
+                aria-selected={sel}
+                onClick={() => onSelect(i)}
+                className={`shrink-0 whitespace-nowrap rounded-t-[4px] border px-4 py-2 text-base font-medium leading-6 tracking-[-0.2px] transition-colors duration-base ${
+                  sel
+                    ? "border-foreground border-b-card bg-card text-foreground"
+                    : "border-transparent border-b-foreground bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            aria-label="Lägg till fack"
+            title="Lägg till fack"
+            className="flex shrink-0 items-center justify-center rounded-t-[4px] border border-transparent border-b-foreground px-4 text-muted-foreground transition-colors duration-base hover:bg-secondary hover:text-foreground"
+          >
+            <Plus size={18} />
+          </button>
+        )}
+      </div>
+      {/* -mt-px lyfter boxen 1 px upp under flikraden (som ligger över, z-10) så att den
+          valda flikens kortfärgade underkant målar över kantlinjen – fliken och boxen blir
+          en form, resten av flikarna sitter kvar bakom linjen. Står den valda fliken först
+          delar den vänsterkant med boxen: då måste boxens övre vänstra hörn vara rakt, annars
+          böjer sig linjen in under fliken och skarven ser tillfällig ut. */}
+      <div className={`-mt-px flex flex-col gap-4 rounded-[4px] border border-foreground bg-card p-4 ${
+        pos === 0 ? "rounded-tl-none" : ""
+      }`}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// Innehållet i en fackflik: vad facket är (öppet/låda/lucka) och därefter det som följer av
+// valet – hyllplan i ett öppet fack, frontstil på en lucka/låda. `cells` är de fack fliken
+// styr (ett, eller alla på "Alla"-fliken) och `heights` deras höjd i cm. Vad facken tål
+// avgör vilka val som finns: en låda saknas i höga fack, hyllplan i låga.
+function FackPanel({ cells, heights, ownHeight = false, onSet, onRemove, removeLabel, onReset }: {
+  cells: Cell[]; heights: number[];
+  // ownHeight: facket bär sin egen höjd (kolumner med egna stommar – TV-möbler). I radläget
+  // sitter höjden på raden och styrs över flikarna i stället.
+  ownHeight?: boolean;
+  // onRemove: sätts bara när EN flik är vald och bandet äger sitt fackantal. Den tar bort
+  // facket – inte bandet; bandet tas bort på bandnivå, utanför det här kortet.
+  onRemove?: () => void; removeLabel?: string;
+  // onReset: sätts bara när användaren faktiskt har ändrat något i bandet. Den ångrar hela
+  // bandets ändringar, inte det valda fackets – därav den bredare formuleringen.
+  onReset?: () => void;
+  onSet: (patch: Partial<Cell>) => void;
+}) {
+  const dOk = heights.every(drawersAllowed);
+  const maxSh = Math.min(...heights.map(maxShelves));
+  const allOpen = cells.every((c) => c.type === "o");
+  const allClosed = cells.every((c) => c.type !== "o");
+  const glassOk = cells.every((c) => c.type === "l");
+  const heightOpts = [20, 40, 80].map((v) => [String(v), `${v} cm`] as [string, string]);
+  const typeOpts = cellOpts(dOk);
+  const frontOpts = (glassOk ? (["plain", "slats", "glass"] as Front[]) : (["plain", "slats"] as Front[])).map((f) => [f, FRONT_LABEL[f]] as [string, string]);
+  const shelfOpts = Array.from({ length: maxSh + 1 }, (_, v) => [String(v), String(v)] as [string, string]);
+  return (
+    <>
+      {ownHeight && (
+        <FackRow label="Höjd">
+          <ButtonGroup
+            options={heightOpts}
+            value={String(same(heights))}
+            onSet={(v) => onSet({ h: +v })}
+          />
+        </FackRow>
+      )}
+
+      <FackRow label="Innehåll">
+        <ButtonGroup
+          options={typeOpts}
+          value={same(cells.map((c) => c.type))}
+          onSet={(v) => onSet({ type: v as CellType })}
+        />
+      </FackRow>
+
+      {allOpen && maxSh > 0 && (
+        <FackRow label="Hyllplan">
+          <ButtonGroup
+            options={shelfOpts}
+            value={String(same(cells.map((c) => c.shelves)))}
+            onSet={(v) => onSet({ shelves: +v })}
+          />
+        </FackRow>
+      )}
+
+      {allClosed && (
+        <FackRow label="Frontstil">
+          {/* Knappar, inte tumnaglar: hur fronterna SER ut visas i det globala Frontstil-valet
+              (med material och allt) – här handlar det bara om vilken front just det här
+              facket har. Glas sitter bara på luckor; en låda får slät eller ribbad front. */}
+          <ButtonGroup
+            options={frontOpts}
+            value={same(cells.map((c) => c.front))}
+            onSet={(v) => onSet({ front: v as Front })}
+          />
+        </FackRow>
+      )}
+
+      {/* Fot: ångra till vänster, borttagning till höger. Båda är tysta textknappar – de ska
+          finnas när man behöver dem utan att konkurrera med valen ovanför. */}
+      {(onReset || onRemove) && (
+        <div className="-mx-4 -mb-4 mt-1 flex items-center justify-between gap-2 px-4 py-2">
+          {onReset ? (
+            <button
+              type="button"
+              onClick={onReset}
+              className="-mx-2 flex h-9 items-center gap-2 rounded-[4px] px-2 text-sm font-semibold text-muted-foreground transition-colors duration-fast hover:bg-secondary hover:text-foreground"
+            >
+              <RotateCcw size={14} /> Ångra ändringar
+            </button>
+          ) : (
+            <span />
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="-mx-2 flex h-9 items-center gap-2 rounded-[4px] px-2 text-sm font-semibold text-destructive transition-colors duration-fast hover:bg-destructive hover:text-destructive-foreground"
+            >
+              <Trash2 size={14} /> {removeLabel ?? "Ta bort fack"}
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
 
 // BandPanel byter ut hela panelinnehållet (nivå 2). Redigerar en rad (rad-axeln) eller
 // en kolumn (kolumnläge). All villkorslogik lånas från lib/config.ts – inget skrivs om här.
-function BandPanel({ S, index, overlay = false, handle, onSetHandle, onSelect, onEditRow, onEditCol, onRemoveRow, onRemoveCol, onBack }: {
+function BandPanel({ S, index, cell, overlay = false, onSelectCell, onEditRow, onEditRowCell, onEditColCell, onEditCol, onAddCell, onRemoveCell, onResetRow, onResetCol, onBack }: {
   S: State; index: number;
+  // cell: vald fackflik i bandet (klampas mot antalet fack – bandet kan ha krympt)
+  cell: number;
+  onSelectCell: (i: number) => void;
+  onEditRowCell: (i: number, ci: number, patch: Partial<Cell>) => void;
+  onEditColCell: (ci: number, ki: number, patch: Partial<Cell>) => void;
   // overlay: renderas i mobilens overlay (stängs med krysset i overlay-huvudet). Byter
-  // panelhuvudets stäng-affordans: krysset i overlayn på mobil, "Gå tillbaka" på desktop.
+  // rubrikens grad, och pinnar rubrikraden i arkets topp så krysset alltid är nåbart.
   overlay?: boolean;
-  // handtag är ett globalt val (hela möbeln) men går även att nå här i bandredigeringen
-  handle: string; onSetHandle: (v: string) => void;
-  onSelect: (i: number) => void;
   onEditRow: (i: number, patch: Partial<Row>) => void;
   onEditCol: (ci: number, patch: Partial<ColDef>) => void;
-  onRemoveRow: (i: number) => void;
-  onRemoveCol: (ci: number) => void;
+  // Fackantal per kolumn – bara TV-möbler (se ColumnBand).
+  onAddCell: (ci: number) => void;
+  onRemoveCell: (ci: number, ki: number) => void;
+  // Släpper bandets lås mot stilen och kastar per-fack-redigeringen.
+  onResetRow: (i: number) => void;
+  onResetCol: (ci: number) => void;
   onBack: () => void;
 }) {
   const isCol = S.axis === "kolumn";
+  const count = isCol ? S.cols : S.rows.length;
   const row = S.rows[index];
   // Bandet kan ha försvunnit (t.ex. borttaget) – gå tillbaka till nivå 1.
   useEffect(() => {
@@ -2080,55 +2551,38 @@ function BandPanel({ S, index, overlay = false, handle, onSetHandle, onSelect, o
   }, [isCol, index, S.cols, row, onBack]);
   if (isCol ? index >= S.cols : !row) return null;
 
-  const count = isCol ? S.cols : S.rows.length;
-  const canRemove = isCol ? S.cols > 1 : S.rows.length > 1;
 
   return (
     <div>
-      {/* Panelhuvud för redigeringsläget: stäng-affordans (Gå tillbaka / kryss) samt en
-          stepper som bläddrar mellan banden (rad/kolumn) utan att man klickar i bilden. */}
-      <BandStepper
-        count={count}
-        index={index}
-        isCol={isCol}
-        overlay={overlay}
-        onSelect={onSelect}
-        onBack={onBack}
-      />
+      {/* Panelhuvud för redigeringsläget: rubrik med bandets nummer + stängkryss. */}
+      <BandHeader index={index} count={count} isCol={isCol} overlay={overlay} onBack={onBack} />
 
       {isCol ? (
-        <ColumnBand S={S} index={index} handle={handle} onSetHandle={onSetHandle} onEdit={onEditCol} />
+        <ColumnBand S={S} index={index} cell={cell} onSelectCell={onSelectCell} onEdit={onEditCol} onEditCell={onEditColCell} onAddCell={onAddCell} onRemoveCell={onRemoveCell} onReset={() => onResetCol(index)} />
       ) : (
-        <RowBand row={row} index={index} cols={S.cols} handle={handle} onSetHandle={onSetHandle} onEdit={onEditRow} />
-      )}
-
-      {canRemove && (
-        <div className="mt-4 border-t border-border pt-5">
-          <button
-            onClick={() => (isCol ? onRemoveCol(index) : onRemoveRow(index))}
-            className="flex h-11 items-center gap-2 rounded-button border border-destructive/40 px-4 text-base font-semibold text-destructive transition-colors duration-fast hover:border-destructive hover:bg-destructive hover:text-destructive-foreground"
-          >
-            <Trash2 size={16} /> {isCol ? "Ta bort kolumn" : "Ta bort rad"}
-          </button>
-        </div>
+        <RowBand row={row} index={index} cols={S.cols} cell={cell} onSelectCell={onSelectCell} onEdit={onEditRow} onEditCell={onEditRowCell} onReset={() => onResetRow(index)} />
       )}
     </div>
   );
 }
 
-// Radredigering: höjd, luckor, lådor, hyllplan – med exakt samma villkor/meddelanden
-// som tidigare RowPopover.
-function RowBand({ row, index, cols, handle, onSetHandle, onEdit }: {
-  row: Row; index: number; cols: number;
-  handle: string; onSetHandle: (v: string) => void;
+// Radredigering. Raden bär bara sin höjd – innehållet väljs per fack i flikarna, så en rad
+// kan blanda öppna fack, lådor och luckor i stället för att tvingas till ett gemensamt val.
+function RowBand({ row, index, cols, cell, onSelectCell, onEdit, onEditCell, onReset }: {
+  row: Row; index: number; cols: number; cell: number;
+  onSelectCell: (i: number) => void;
   onEdit: (i: number, patch: Partial<Row>) => void;
+  onEditCell: (i: number, ci: number, patch: Partial<Cell>) => void;
+  onReset: () => void;
 }) {
-  const maxSh = maxShelves(row.h);
   const cells = rowCells(row, cols);
-  const hasOpen = cells.some((c) => c.type === "o");
-  // Frontstil per rad är bara relevant när raden har luckor/lådor; glas kräver en lucka.
-  const hasClosed = row.doors !== "none" || row.drawers !== "none";
-  const glassOk = row.doors !== "none";
+  // Facken kan ha blivit färre (smalare möbel) sedan fliken valdes. -1 = "Alla"-fliken, som
+  // inte finns på ett band med ett enda fack – där är facket självt hela bandet.
+  const ci = cells.length < 2 ? 0 : cell < 0 ? -1 : Math.min(cell, cells.length - 1);
+  const edited = ci < 0 ? cells : [cells[ci]];
+  // Bandet är överskrivet först när något faktiskt är valt här – annars är återställning en
+  // knapp som inte gör något.
+  const overridden = !!(row.locked || row.cells);
 
   return (
     <>
@@ -2138,118 +2592,65 @@ function RowBand({ row, index, cols, handle, onSetHandle, onEdit }: {
         value={String(row.h)}
         onSet={(v) => onEdit(index, { h: +v })}
       />
-      <BandSegmented label="Luckor" options={AMOUNT_OPTS} value={row.doors} onSet={(v) => onEdit(index, { doors: v as Amount })} />
 
-      {drawersAllowed(row.h) ? (
-        <BandSegmented label="Lådor" options={AMOUNT_OPTS} value={row.drawers} onSet={(v) => onEdit(index, { drawers: v as Amount })} />
-      ) : (
-        <>
-          <Text variant="body" className="mb-2 block font-semibold">Lådor</Text>
-          <BandMsg>Lådor trivs i låga rader – sänk höjden till 40 cm så dyker de upp.</BandMsg>
-        </>
-      )}
-      {drawersAllowed(row.h) && row.doors !== "none" && row.drawers !== "none" && (
-        <BandMsg>Luckor och lådor delar på facken – ökar du den ena ger den andra plats.</BandMsg>
-      )}
-
-      <Text variant="body" className="mb-2 block font-semibold">Hyllplan (öppna fack)</Text>
-      {maxSh === 0 ? (
-        <BandMsg>Höj raden lite så får du plats med hyllplan.</BandMsg>
-      ) : !hasOpen ? (
-        <BandMsg>Hyllplan behöver ett öppet fack – ta bort en lucka eller låda så frigörs ett.</BandMsg>
-      ) : (
-        <ButtonGroup
-          className="mb-6"
-          options={Array.from({ length: maxSh + 1 }, (_, v) => [String(v), String(v)])}
-          value={String(row.shelves)}
-          onSet={(v) => onEdit(index, { shelves: +v })}
+      <FackTabs count={cells.length} index={ci} onSelect={onSelectCell}>
+        <FackPanel
+          cells={edited}
+          heights={edited.map(() => row.h)}
+          onSet={(patch) => onEditCell(index, ci, patch)}
+          onReset={overridden ? onReset : undefined}
         />
-      )}
-
-      {hasClosed && (
-        <div className="mb-2">
-          <Text variant="body" className="mb-2 block font-semibold">Frontstil</Text>
-          <FrontPicker
-            fronts={glassOk ? (["plain", "slats", "glass"] as Front[]) : (["plain", "slats"] as Front[])}
-            value={row.front}
-            onSet={(v) => onEdit(index, { front: v })}
-          />
-          {!glassOk && <Text variant="small" className="mt-3 text-muted-foreground">Glasfront sitter bara på luckor – lägg till en lucka först.</Text>}
-        </div>
-      )}
-
-      {/* Handtag: globalt val för hela möbeln, men går att nå här när raden har fronter. */}
-      {hasClosed && (
-        <div className="mt-6">
-          <Text variant="body" className="mb-2 block font-semibold">Beslag</Text>
-          <HandlePicker options={HANDLES} value={handle} onSet={onSetHandle} />
-          <Text variant="small" className="mt-3 text-muted-foreground">Beslaget gäller hela möbeln.</Text>
-        </div>
-      )}
+      </FackTabs>
     </>
   );
 }
 
-// Kolumnredigering (kolumnläge): luckor/lådor fördelas nedåt – samma modell som ColumnPopover.
-function ColumnBand({ S, index, handle, onSetHandle, onEdit }: {
-  S: State; index: number;
-  handle: string; onSetHandle: (v: string) => void;
+// Kolumnredigering (kolumnläge). Som raden: kolumnen bär sin höjd, innehållet väljs per fack
+// uppifrån och ner i flikarna.
+function ColumnBand({ S, index, cell, onSelectCell, onEdit, onEditCell, onAddCell, onRemoveCell, onReset }: {
+  S: State; index: number; cell: number;
+  onSelectCell: (i: number) => void;
   onEdit: (ci: number, patch: Partial<ColDef>) => void;
+  onEditCell: (ci: number, ki: number, patch: Partial<Cell>) => void;
+  onAddCell: (ci: number) => void;
+  onRemoveCell: (ci: number, ki: number) => void;
+  onReset: () => void;
 }) {
   const def = S.colDefs?.[index] ?? { doors: "none", drawers: "none" };
   // Egen höjd per kolumn – bara TV-möbler (ojämn topp), som default+override mot Form-höjden.
   const perColHeight = S.category === "tvbank";
-  const globalCells = S.rows.length;
-  const cells = def.height ?? globalCells;
-  const overridden = def.height !== undefined;
-  // Hyllplan sitter i kolumnens öppna fack – finns inga (allt är luckor/lådor) visas
-  // samma hjälptext som i radläget. Facken är 40 cm → max 1 hyllplan per fack.
-  const hasOpen = fillColumn(def, colHeight(S, index)).some((t) => t === "o");
-  const maxSh = maxShelves(40);
+  const cells = colCells(def, colHeight(S, index), S.front);
+  const ki = cells.length < 2 ? 0 : cell < 0 ? -1 : Math.min(cell, cells.length - 1);
+  // Fackens höjder: eget val per fack (TV-möbler) eller radens höjd på respektive nivå.
+  const heights = colCellHeights(S, index);
+  const edited = ki < 0 ? cells : [cells[ki]];
+  const editedHeights = ki < 0 ? heights : [heights[ki]];
+  // Fackantalet ändras här bara när kolumnen äger det (TV-möbler). I övriga lägen kommer det
+  // från höjden i grundvalen, och då finns varken plusflik eller ta bort-knapp.
+  const canAdd = perColHeight && cells.length < ROWMAX;
+  const canRemove = perColHeight && ki >= 0 && cells.length > 1;
+  // Överskriven = användaren har ändrat något här. `locked` sätts av varje sådan ändring och
+  // är därför signalen. Egen fackhöjd (`height`) är det INTE: TV-bänkens låga mitt kommer
+  // med kategorin, så den hade fått varje sådan kolumn att se redigerad ut från början.
+  const overridden = !!(def.locked || def.cells);
   return (
-    <>
-      {perColHeight && (
-        <div className="mb-6">
-          <Range label="Höjd" value={cells} max={ROWMAX} pill={`${cellsToCm(cells)} cm`} onSet={(v) => onEdit(index, { height: v })} />
-          {overridden ? (
-            <button
-              onClick={() => onEdit(index, { height: undefined })}
-              className="text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground"
-            >
-              Anpassad höjd · återställ till global ({cellsToCm(globalCells)} cm)
-            </button>
-          ) : (
-            <BandMsg>Ärver den globala höjden. Ändra här för att ge just den här sektionen en egen höjd – t.ex. lägre för TV:n.</BandMsg>
-          )}
-        </div>
-      )}
-      <BandSegmented label="Luckor" options={AMOUNT_OPTS} value={def.doors} onSet={(v) => onEdit(index, { doors: v as Amount })} />
-      <BandSegmented label="Lådor" options={AMOUNT_OPTS} value={def.drawers} onSet={(v) => onEdit(index, { drawers: v as Amount })} />
-      {def.doors !== "none" && def.drawers !== "none" && (
-        <BandMsg>Luckor och lådor delar på kolumnen – ökar du den ena ger den andra plats.</BandMsg>
-      )}
-
-      <Text variant="body" className="mb-2 block font-semibold">Hyllplan (öppna fack)</Text>
-      {!hasOpen ? (
-        <BandMsg>Hyllplan behöver ett öppet fack – ta bort en lucka eller låda så frigörs ett.</BandMsg>
-      ) : (
-        <ButtonGroup
-          className="mb-6"
-          options={Array.from({ length: maxSh + 1 }, (_, v) => [String(v), String(v)])}
-          value={String(def.shelves ?? 0)}
-          onSet={(v) => onEdit(index, { shelves: +v })}
-        />
-      )}
-
-      {/* Handtag: globalt val för hela möbeln, men går att nå här när kolumnen har fronter. */}
-      {(def.doors !== "none" || def.drawers !== "none") && (
-        <div className="mt-6">
-          <Text variant="body" className="mb-2 block font-semibold">Beslag</Text>
-          <HandlePicker options={HANDLES} value={handle} onSet={onSetHandle} />
-          <Text variant="small" className="mt-3 text-muted-foreground">Beslaget gäller hela möbeln.</Text>
-        </div>
-      )}
-    </>
+    <FackTabs
+      count={cells.length}
+      index={ki}
+      bottomUp
+      onAdd={canAdd ? () => onAddCell(index) : undefined}
+      onSelect={onSelectCell}
+    >
+      <FackPanel
+        cells={edited}
+        heights={editedHeights}
+        ownHeight={perColHeight}
+        onSet={(patch) => onEditCell(index, ki, patch)}
+        onRemove={canRemove ? () => onRemoveCell(index, ki) : undefined}
+        removeLabel={`Ta bort fack ${stackNo(ki, cells.length)}`}
+        onReset={overridden ? onReset : undefined}
+      />
+    </FackTabs>
   );
 }
 
