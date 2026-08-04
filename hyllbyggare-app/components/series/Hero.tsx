@@ -39,7 +39,7 @@ export default function Hero() {
                 Anamosa
               </h1>
               <p className="max-w-[800px] text-center font-body text-xl leading-7 tracking-tight text-muted-foreground">
-                En hylla. Oändligt med möjligheter
+                En hylla. Oändligt många möjligheter.
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
@@ -81,7 +81,7 @@ export default function Hero() {
 
             <FeatureCard>
               <Image src="/brand/orb.png" alt="" width={24} height={24} aria-hidden />
-              <p className="font-body text-base tracking-tight">Designa så som du vill ha den</p>
+              <p className="font-body text-base tracking-tight">Designa den precis som du vill</p>
             </FeatureCard>
 
             <FeatureCard>

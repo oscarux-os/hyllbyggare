@@ -33,7 +33,7 @@ export default function TillvalCompact({
         <div className="flex flex-wrap items-center gap-3">
           <Heading level="h2" className="text-[22px] leading-none lg:text-[2rem]">Tillval</Heading>
           <span className="w-fit bg-sale px-3 py-1.5 font-body text-sm font-medium leading-none text-sale-foreground">
-            50% på alla tillval vid köp av Anamosa
+            50 % på alla tillval vid köp av Anamosa
           </span>
         </div>
         <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1">

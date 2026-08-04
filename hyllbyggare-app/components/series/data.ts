@@ -156,9 +156,11 @@ export const KEY_SPECS: KeySpec[] = [
 ];
 
 /* ---------- Valmöjligheter ---------- */
-export const FUNKTION = ["Låda", "Lucka", "Hylla"] as const;
-export const FRONT = ["Slät", "Ribbad", "Glas"] as const;
-export const BESLAG = ["Trä", "Mässing", "Grepp", "Push"] as const;
+// Samma namn som i konfiguratorn (CELL_LABEL, FRONT_LABEL, HANDLES) så seriesidan och
+// byggaren pratar om samma saker.
+export const FUNKTION = ["Öppet", "Låda", "Lucka"] as const;
+export const FRONT = ["Slät", "Ribbor", "Glas"] as const;
+export const BESLAG = ["Träknopp", "Mässingsknopp", "Bygelhandtag", "Push-open"] as const;
 export const PREVIEW_IMAGE = "/series/preview.png";
 
 /* ---------- Recensioner ---------- */

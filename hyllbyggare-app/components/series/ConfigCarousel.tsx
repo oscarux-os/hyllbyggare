@@ -26,7 +26,7 @@ export default function ConfigCarousel() {
     <section aria-label="Färdiga konfigurationer">
       {/* Sektionstitel – skapar hierarki ovanför valen (PageHead i Figma) */}
       <div className="px-2 pt-12 md:px-6 md:pt-16">
-        <Heading level="display-sm" as="h2">Förvaring som formar sig</Heading>
+        <Heading level="display-sm" as="h2">Förvaring som formar sig efter dig</Heading>
       </div>
 
       {/* Flikar + Filtrera */}
