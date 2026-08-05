@@ -9,8 +9,8 @@ import ProductInfo from "./ProductInfo";
 import { TILLVAL_PRODUCTS, offerAmount, formatKr, type TillvalProduct } from "@/lib/tillval";
 import {
   COLORS, LEGS, HANDLES, STYLES, FRONT_LABEL, CATEGORIES,
-  U, STEP, COLMAX, ROWMAX, HEIGHT_STEPS, type State, type Row, type Amount, type Front, type ColDef, type CellType,
-  newRow, r, cellObj, applyStyle, applyColStyle, rowCells, gridCells, fillColumn, colCells, allCells, colHeight, colCellHeights, colCm, cellsToCm, realW, realH, maxShelves, drawersAllowed, fitAmount, hasFronts,
+  U, STEP, COLMAX, ROWMAX, HEIGHT_STEPS, type State, type Row, type Amount, type Front, type WoodFront, type ColDef, type CellType,
+  newRow, r, cellObj, applyStyle, applyColStyle, rowCells, gridCells, fillColumn, colCells, allCells, colHeight, colCellHeights, colCm, cellsToCm, realW, realH, maxShelves, drawersAllowed, fitAmount, hasFronts, hasWoodFronts, usesGlass, setWoodFront,
   fitCells, normalizeCells, setRowCell, setRowCells, setColCell, setColCells, addColCell, removeColCell, colDefsFor,
   heightStepToLayout, layoutToHeightStep, type Cell,
 } from "@/lib/config";
@@ -45,6 +45,8 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const [activeCell, setActiveCell] = useState(-1);
 
   // hovrat band – tänder markering + "Redigera"-knappen (öppnar inte nivå 2 av sig självt).
+  // Sätts bara av en riktig muspekare: en touch som "hovrar" skulle rita om bandet och få
+  // webbläsaren att svälja första trycket, så bandet krävde två tryck för att öppnas.
   const [hovered, setHovered] = useState<number | null>(null);
   // Mobilens redigeringsark (nivå 2) är inte halva skärmen längre utan så högt som dess
   // innehåll kräver, upp till ett tak. Höjden mäts och skickas till bilden ovanför som
@@ -399,7 +401,10 @@ export default function Configurator({ initialState = initial, onBack }: { initi
     closed * 420 +
     (S.mount === "staende" ? 500 : 0) +
     (S.material === "ek" ? 1200 : 0) +
-    (S.front === "glass" ? 900 : S.front === "slats" ? 500 : 0) +
+    // Glaset prissätts på förekomst, inte på ett globalt stilvärde – det sitter numera på
+    // luckan. Trästilen ligger kvar som ett tillägg på hela möbeln.
+    (usesGlass(S) ? 900 : 0) +
+    (S.front === "slats" ? 500 : 0) +
     (handleId === "push" ? 400 : handleId === "h3" ? 250 : handleId === "h2" ? 150 : 0);
   const price = priceNum.toLocaleString("sv-SE");
   // Ordinarie pris så att kampanjpriset är exakt 30 % rabatt (pris = 0,7 × ordinarie),
@@ -430,7 +435,15 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const curHandle = HANDLES.find((h) => h[0] === handleId)!;
   // Summeringens värden bygger på faktiska val.
   const colorName = curColor[1];
-  const frontLabel = hasFronts(S) ? FRONT_LABEL[S.front] : null;
+  // Fronten i summeringen. S.front är bara trästilen, så en möbel med glasluckor måste
+  // säga det själv – annars läser man "Slät" som att glaset inte finns.
+  const frontLabel = !hasFronts(S)
+    ? null
+    : !usesGlass(S)
+    ? FRONT_LABEL[S.front]
+    : hasWoodFronts(S)
+    ? `${FRONT_LABEL[S.front]} + glas`
+    : FRONT_LABEL.glass;
   const handleName = curHandle[1];
   const depthCm = 40; // Anamosa-modulernas djup
   const categoryName = CATEGORIES.find((c) => c.id === S.category)?.name ?? "Hylla";
@@ -698,19 +711,16 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             <SelectionCopy title={curColor[1]} desc={curColor[2]} />
           </PanelSection>
 
-          {hasFronts(S) && (
+          {hasWoodFronts(S) && (
             <PanelSection title="Frontstil">
-              {/* Global frontstil skriver om alla fronter – även per-fack-satta (rader och kolumner). */}
+              {/* Trästilen är det globala valet och skriver om alla träfronter – i raderna
+                  och i kolumnernas fack. Glas står utanför: det är vad en lucka ÄR, inte
+                  hur den är ytbehandlad, och väljs därför per lucka i bandredigeringen.
+                  Utan den gränsen skulle ett stilbyte tyst göra om vitrinens glas till trä. */}
               <FrontPicker
                 value={S.front}
-                onSet={(front) =>
-                  setS((s) => ({
-                    ...s,
-                    front,
-                    rows: s.rows.map((row) => ({ ...row, front, cells: row.cells?.map((c) => ({ ...c, front })) })),
-                    colDefs: s.colDefs?.map((d) => (d.cells ? { ...d, cells: d.cells.map((c) => ({ ...c, front })) } : d)),
-                  }))
-                }
+                fronts={["plain", "slats"]}
+                onSet={(front) => setS((s) => setWoodFront(s, front as WoodFront))}
               />
               <SelectionCopy title={FRONT_LABEL[S.front]} desc={frontDescription(S.front)} />
             </PanelSection>
@@ -906,10 +916,18 @@ function Summary({
   const bands = bandBreakdown(S);
   const bandsTitle = S.axis === "kolumn" ? "Kolumner" : "Rader";
   // löptext med alla val: färg, ev. front, beslag och mått. Fronten böjs efter substantivet
-  // ("Ribbor" → ribbad front), annars blir uppräkningen ogrammatisk.
+  // ("Ribbor" → ribbad front), annars blir uppräkningen ogrammatisk. Glaset nämns för sig:
+  // det är ett val per lucka och kan finnas sida vid sida med trästilen.
+  const frontPhrase = !frontLabel
+    ? null
+    : !usesGlass(S)
+    ? FRONT_PHRASE[S.front]
+    : hasWoodFronts(S)
+    ? `${FRONT_PHRASE[S.front]} och glas`
+    : FRONT_PHRASE.glass;
   const specs = [
     colorName,
-    S.front && frontLabel ? FRONT_PHRASE[S.front] : null,
+    frontPhrase,
     frontLabel ? handleName.toLowerCase() : null,
     dims,
   ].filter(Boolean).join(", ");
@@ -1548,7 +1566,10 @@ function AddButton({ style, className = "", label, onClick }: { style: React.CSS
       className={`group absolute z-10 flex h-10 items-center overflow-hidden border border-border bg-card rounded-button hover:border-primary ${className}`}
     >
       <span className="flex h-9 w-9 items-center justify-center"><Plus size={18} /></span>
-      <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm font-semibold opacity-0 transition-all duration-base group-hover:max-w-[180px] group-hover:pr-4 group-hover:opacity-100">
+      {/* Etiketten fälls ut vid hover – på touch står den framme direkt. Utan det blir
+          första trycket ett "hovra"-tryck (webbläsaren sväljer klicket) och knappen
+          skulle kräva två tryck. */}
+      <span className="max-w-[180px] overflow-hidden whitespace-nowrap pr-4 text-sm font-semibold transition-all duration-base [@media(hover:hover)]:max-w-0 [@media(hover:hover)]:pr-0 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:max-w-[180px] [@media(hover:hover)]:group-hover:pr-4 [@media(hover:hover)]:group-hover:opacity-100">
         {label}
       </span>
     </button>
@@ -2050,8 +2071,10 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
             // Genomskinlighet, inte mix-blend-multiply. Blandning kräver att lagret INTE har
             // z-index (en stapelkontext ger den ingen bakgrund att blanda mot) – men utan
             // z-index tar bandet under emot klicken och facken går inte att välja i bilden.
+            // Förhandsvisningen vid hover gäller bara pekare som faktiskt kan hovra. På touch
+            // skulle den göra första trycket till ett "hovra"-tryck och facket kräva två.
             className={`pointer-events-auto cursor-pointer transition-colors duration-base ${
-              marked ? "bg-[rgba(255,209,0,0.42)]" : "hover:bg-[rgba(255,209,0,0.18)]"
+              marked ? "bg-[rgba(255,209,0,0.42)]" : "[@media(hover:hover)]:hover:bg-[rgba(255,209,0,0.18)]"
             }`}
           />
         );
@@ -2074,8 +2097,8 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
               <div
                 key={ci}
                 ref={bandRef(ci)}
-                onMouseEnter={() => onHover(ci)}
-                onMouseLeave={() => onHover(null)}
+                onPointerEnter={(e) => e.pointerType === "mouse" && onHover(ci)}
+                onPointerLeave={() => onHover(null)}
                 onClick={() => onOpen(ci)}
                 className={`group relative flex cursor-pointer flex-col gap-1.5 p-1.5 outline transition-[outline-color] duration-base ${bandRing(ci)}`}
                 style={{ background: frame, ...ringStyle }}
@@ -2097,8 +2120,8 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
             <div
               key={ci}
               ref={bandRef(ci)}
-              onMouseEnter={() => onHover(ci)}
-              onMouseLeave={() => onHover(null)}
+              onPointerEnter={(e) => e.pointerType === "mouse" && onHover(ci)}
+              onPointerLeave={() => onHover(null)}
               onClick={() => onOpen(ci)}
               className={`group relative flex flex-1 cursor-pointer flex-col gap-1.5 outline transition-[outline-color] duration-base ${bandRing(ci)}`}
               style={ringStyle}
@@ -2118,8 +2141,8 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
           <div
             key={ri}
             ref={bandRef(ri)}
-            onMouseEnter={() => onHover(ri)}
-            onMouseLeave={() => onHover(null)}
+            onPointerEnter={(e) => e.pointerType === "mouse" && onHover(ri)}
+            onPointerLeave={() => onHover(null)}
             onClick={() => onOpen(ri)}
             className={`group relative flex cursor-pointer gap-1.5 outline transition-[outline-color] duration-base ${bandRing(ri)}`}
             style={{ height: (row.h / 40) * U, ...ringStyle }}
@@ -2136,9 +2159,11 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
   );
 }
 
-// "Redigera"-knapp som bara tänds på bandet vid hover (desktop). På touch/mobil används
-// tabbarna i panelen för att välja band – därför ingen forcerad hover-knapp där. Aktivt band
-// markeras enbart med ringen, annars ser det aktiva bandet ut som att det hovras.
+// "Redigera"-knapp som bara tänds på bandet vid hover (desktop). På touch finns den inte
+// alls – där räcker ett tryck på bandet. Den får inte ens ligga kvar dold: en yta som
+// dyker upp vid :hover gör att touch-webbläsare tolkar första trycket som "hovra" och
+// sväljer klicket, så bandet skulle kräva två tryck. Aktivt band markeras enbart med
+// ringen, annars ser det aktiva bandet ut som att det hovras.
 // Pillret ligger inuti hyllans skalning men är gränssnitt, inte möbel: --inv (satt på
 // hyllan) skalar tillbaka det så texten är lika stor oavsett hur stor hyllan ritas.
 function EditPill({ onClick }: { onClick: () => void }) {
@@ -2148,7 +2173,7 @@ function EditPill({ onClick }: { onClick: () => void }) {
       aria-label="Redigera bandet"
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       style={{ transform: "translate(-50%, -50%) scale(var(--inv, 1))" }}
-      className="pointer-events-auto absolute left-1/2 top-1/2 z-20 flex items-center gap-1.5 whitespace-nowrap border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground shadow-sm rounded-button opacity-0 transition-opacity duration-fast group-hover:opacity-100"
+      className="pointer-events-auto absolute left-1/2 top-1/2 z-20 hidden items-center gap-1.5 whitespace-nowrap border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground shadow-sm rounded-button opacity-0 transition-opacity duration-fast group-hover:opacity-100 [@media(hover:hover)]:flex"
     >
       <Pencil size={14} /> Redigera
     </button>
