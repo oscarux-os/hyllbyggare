@@ -2,7 +2,7 @@
 
 import { useRef, useState, useLayoutEffect, useEffect } from "react";
 import Image from "next/image";
-import { Plus, Minus, Check, ArrowLeft, X, Ruler, Trash2, RotateCcw, Sofa, Pencil, Truck, MoreHorizontal } from "lucide-react";
+import { Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Trash2, RotateCcw, Sofa, Pencil, Truck, MoreHorizontal } from "lucide-react";
 import { Heading, Text } from "./Type";
 import Tillval from "./TillvalCompact";
 import ProductInfo from "./ProductInfo";
@@ -303,7 +303,8 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   // Öppna nivå 2 för ett band. Redigeringen sker nu i panelen (ingen flytande popover).
   // Den hopfällda verktygsmenyn (mobil) stängs samtidigt – den göms i nivå 2 och ska inte
   // stå kvar öppen när man kommer tillbaka till helheten.
-  const openBand = (i: number) => { setActive(i); setActiveCell(-1); setToolsOpen(false); };
+  const selectBand = (i: number) => { setActive(i); setActiveCell(-1); };
+  const openBand = (i: number) => { selectBand(i); setToolsOpen(false); };
   const backToLevel1 = () => setActive(null);
 
   // När man går in i bandredigering (nivå 2) kan man redan ha scrollat långt ner förbi den
@@ -447,6 +448,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       index={active as number}
       cell={activeCell}
       overlay={overlay}
+      onSelect={selectBand}
       onSelectCell={setActiveCell}
       onEditRow={editRow}
       onEditRowCell={editRowCell}
@@ -2245,37 +2247,47 @@ export function Legs({ S }: { S: State; frame: string }) {
 /* ---------- nivå 2: bandredigering i panelen ---------- */
 
 // Panelhuvud i redigeringsläget (nivå 2). Rubriken säger VAD man redigerar, inte vilket i
-// ordningen – den delen står bredvid som en dämpad räknare. Uppdelningen gör rubriken sig lik
-// oavsett band, och håller ändå kvar svaret på "vilken av dem är jag i?", som annars bara går
-// att läsa ur bilden. Bytet av band sker fortfarande genom att klicka på ett annat i bilden.
+// ordningen – den delen står som en räknare i samma rad. Man byter band antingen genom att
+// klicka på ett annat i bilden eller med ‹ ›-stegen här, för allt är inte alltid i bild.
 // Samma stäng-affordans i båda lägena: ett kryss längst till höger på rubrikraden. Skillnaden
 // är bara rubrikens grad och att mobilens rad är sticky i arket.
-function BandHeader({ index, count, isCol, overlay = false, onBack }: {
-  index: number; count: number; isCol: boolean; overlay?: boolean; onBack: () => void;
+function BandHeader({ index, count, isCol, overlay = false, onSelect, onBack }: {
+  index: number; count: number; isCol: boolean; overlay?: boolean;
+  onSelect: (i: number) => void; onBack: () => void;
 }) {
   const title = isCol ? "Kolumninnehåll" : "Radinnehåll";
   // Kolumner räknas från vänster, rader nerifrån – samma regel som facken och sammanfattningen.
   const no = isCol ? index + 1 : stackNo(index, count);
+  // Stegen följer NUMRET, inte indexet: ‹ går alltid till ett lägre nummer, vilket för rader
+  // betyder bandet under (nästa index). Annars hade pilarna pekat åt fel håll i radläge.
+  const step = isCol ? 1 : -1;
   // Räknaren är en del av rubriken, inte ett tillägg bredvid den – samma storlek, färg och
   // vikt. Som eget textelement fick den brödtextens grad, och rubrikraden två olika storlekar.
   const counter = `${no} av ${count}`;
+  // Runda, ljusgrå ikonknappar – samma neutrala yta som segmentkontrollerna.
+  const roundBtn = "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground transition-colors duration-fast hover:bg-[oklch(0.91_0_0)] disabled:pointer-events-none disabled:opacity-40";
+  const noun = (isCol ? "Kolumn" : "Rad").toLowerCase();
 
-  const close = (
-    <button
-      onClick={onBack}
-      aria-label="Stäng"
-      className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-foreground transition-colors duration-fast hover:bg-[oklch(0.91_0_0)]"
-    >
-      <X size={20} />
-    </button>
+  const controls = (
+    <div className="ml-auto flex shrink-0 items-center gap-2">
+      <button onClick={() => onSelect(index - step)} disabled={no <= 1} aria-label={`Föregående ${noun}`} className={roundBtn}>
+        <ChevronLeft size={20} />
+      </button>
+      <button onClick={() => onSelect(index + step)} disabled={no >= count} aria-label={`Nästa ${noun}`} className={roundBtn}>
+        <ChevronRight size={20} />
+      </button>
+      <button onClick={onBack} aria-label="Stäng" className={`ml-2 ${roundBtn}`}>
+        <X size={20} />
+      </button>
+    </div>
   );
 
-  // Mobil: rubrikraden pinnas i arkets topp så krysset är nåbart även när valen scrollar.
+  // Mobil: rubrikraden pinnas i arkets topp så stegen och krysset är nåbara även när valen scrollar.
   if (overlay) {
     return (
       <div className="sticky top-0 z-10 -mx-4 mb-6 flex items-center gap-4 bg-card px-4 pb-4 pt-4">
         <Heading level="h3" className="min-w-0 leading-none">{title} {counter}</Heading>
-        {close}
+        {controls}
       </div>
     );
   }
@@ -2283,7 +2295,7 @@ function BandHeader({ index, count, isCol, overlay = false, onBack }: {
   return (
     <div className="mb-8 flex items-center gap-4">
       <Heading level="h2" className="min-w-0 text-[22px] leading-none lg:text-[2rem]">{title} {counter}</Heading>
-      {close}
+      {controls}
     </div>
   );
 }
@@ -2522,7 +2534,7 @@ function FackPanel({ cells, heights, ownHeight = false, onSet, onRemove, removeL
 
 // BandPanel byter ut hela panelinnehållet (nivå 2). Redigerar en rad (rad-axeln) eller
 // en kolumn (kolumnläge). All villkorslogik lånas från lib/config.ts – inget skrivs om här.
-function BandPanel({ S, index, cell, overlay = false, onSelectCell, onEditRow, onEditRowCell, onEditColCell, onEditCol, onAddCell, onRemoveCell, onResetRow, onResetCol, onBack }: {
+function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, onEditRow, onEditRowCell, onEditColCell, onEditCol, onAddCell, onRemoveCell, onResetRow, onResetCol, onBack }: {
   S: State; index: number;
   // cell: vald fackflik i bandet (klampas mot antalet fack – bandet kan ha krympt)
   cell: number;
@@ -2532,6 +2544,7 @@ function BandPanel({ S, index, cell, overlay = false, onSelectCell, onEditRow, o
   // overlay: renderas i mobilens overlay (stängs med krysset i overlay-huvudet). Byter
   // rubrikens grad, och pinnar rubrikraden i arkets topp så krysset alltid är nåbart.
   overlay?: boolean;
+  onSelect: (i: number) => void;
   onEditRow: (i: number, patch: Partial<Row>) => void;
   onEditCol: (ci: number, patch: Partial<ColDef>) => void;
   // Fackantal per kolumn – bara TV-möbler (se ColumnBand).
@@ -2555,7 +2568,7 @@ function BandPanel({ S, index, cell, overlay = false, onSelectCell, onEditRow, o
   return (
     <div>
       {/* Panelhuvud för redigeringsläget: rubrik med bandets nummer + stängkryss. */}
-      <BandHeader index={index} count={count} isCol={isCol} overlay={overlay} onBack={onBack} />
+      <BandHeader index={index} count={count} isCol={isCol} overlay={overlay} onSelect={onSelect} onBack={onBack} />
 
       {isCol ? (
         <ColumnBand S={S} index={index} cell={cell} onSelectCell={onSelectCell} onEdit={onEditCol} onEditCell={onEditColCell} onAddCell={onAddCell} onRemoveCell={onRemoveCell} onReset={() => onResetCol(index)} />
