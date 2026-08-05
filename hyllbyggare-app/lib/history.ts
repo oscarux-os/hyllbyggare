@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AMOUNT_LABEL, CELL_LABEL, COLORS, FRONT_LABEL, HANDLES, LEGS, STYLES,
+  CELL_LABEL, COLORS, FRONT_LABEL, HANDLES, LEGS, STYLES,
   colCells, colHeight, furnitureHeightCm, realW, rowCells, stackNo,
   type Amount, type Cell, type ColDef, type Row, type State,
 } from "./config";
@@ -44,35 +44,48 @@ const sameCells = (a: Cell[], b: Cell[]) =>
   a.length === b.length &&
   a.every((c, i) => c.type === b[i].type && c.span === b[i].span && c.front === b[i].front && c.shelves === b[i].shelves && c.h === b[i].h);
 
+// Fronten som något ett fack FICK, inte som ett listval: "en glasfront", inte "Glas".
+const FRONT_PHRASE: Record<Cell["front"], string> = {
+  plain: "en slät front", slats: "en ribbfront", glass: "en glasfront",
+};
+
+// Mängd-valen som en händelse. "Inga/Några/Alla" är rätt i listan man klickar i, men i en
+// tidslinje ska det stå vad som hände: raden fick luckor i alla fack.
+const amountPhrase = (n: Amount, what: string) =>
+  n === "none" ? `fick inga ${what}` : n === "max" ? `fick ${what} i alla fack` : `fick några ${what}`;
+
 // Vad hände med ETT fack? Bara det som faktiskt skiljer nämns – facket har ju redan pekats ut
-// av bandets etikett, så "Fack 3: Lucka" räcker.
+// av bandets etikett, så resten är underförstått.
 function cellDetail(a: Cell, b: Cell): string {
-  if (a.type !== b.type) return CELL_LABEL[b.type];
-  if (a.front !== b.front) return FRONT_LABEL[b.front];
-  if (a.shelves !== b.shelves) return `${b.shelves} hyllplan`;
-  if (a.h !== b.h) return `${b.h} cm`;
-  return "ändrat";
+  if (a.type !== b.type) return b.type === "o" ? "blev öppet" : `blev en ${CELL_LABEL[b.type].toLowerCase()}`;
+  if (a.front !== b.front) return `fick ${FRONT_PHRASE[b.front]}`;
+  if (a.shelves !== b.shelves) return b.shelves ? `fick ${b.shelves} hyllplan` : "fick hyllplanen borttagna";
+  if (a.h !== b.h) return `blev ${b.h} cm högt`;
+  return "ändrades";
 }
 
 // Vad hände i ett band? Mängd-valen (luckor/lådor/hyllplan) beskriver sig själva bäst; annars
-// pekas det enskilda facket ut. Ändrades flera fack på en gång får bandet en samlad etikett –
-// en lista med fem fack i loggen säger mindre än "ändrad".
+// pekas det enskilda facket ut och blir självt meningens subjekt ("Fack 3 i rad 2 blev en
+// lucka"). Ändrades flera fack på en gång får bandet en samlad etikett – en lista med fem
+// fack i loggen säger mindre än "ändrades".
 function bandDetail(
+  band: string,
   a: { doors: Amount; drawers: Amount; shelves?: number },
   b: { doors: Amount; drawers: Amount; shelves?: number },
   ca: Cell[], cb: Cell[],
   no: (i: number) => number,
 ): string {
-  if (a.doors !== b.doors) return `luckor – ${AMOUNT_LABEL[b.doors].toLowerCase()}`;
-  if (a.drawers !== b.drawers) return `lådor – ${AMOUNT_LABEL[b.drawers].toLowerCase()}`;
-  if ((a.shelves ?? 0) !== (b.shelves ?? 0)) return `${b.shelves ?? 0} hyllplan`;
+  if (a.doors !== b.doors) return `${band} ${amountPhrase(b.doors, "luckor")}`;
+  if (a.drawers !== b.drawers) return `${band} ${amountPhrase(b.drawers, "lådor")}`;
+  if ((a.shelves ?? 0) !== (b.shelves ?? 0))
+    return b.shelves ? `${band} fick ${b.shelves} hyllplan` : `${band} fick hyllplanen borttagna`;
   const diff: number[] = [];
   for (let i = 0; i < Math.max(ca.length, cb.length); i++) {
     if (!ca[i] || !cb[i] || !sameCells([ca[i]], [cb[i]])) diff.push(i);
   }
   if (diff.length === 1 && ca[diff[0]] && cb[diff[0]])
-    return `fack ${no(diff[0])} – ${cellDetail(ca[diff[0]], cb[diff[0]]).toLowerCase()}`;
-  return "ändrad";
+    return `Fack ${no(diff[0])} i ${band.toLowerCase()} ${cellDetail(ca[diff[0]], cb[diff[0]])}`;
+  return `${band} ändrades`;
 }
 
 function rowChange(prev: State, next: State): Change | null {
@@ -83,8 +96,8 @@ function rowChange(prev: State, next: State): Change | null {
     const ca = rowCells(a, prev.cols);
     const cb = rowCells(b, next.cols);
     if (sameCells(ca, cb)) continue;
-    const detail = bandDetail(a, b, ca, cb, (k) => k + 1);
-    return { kind: `rad-${i}`, label: `Rad ${stackNo(i, next.rows.length)}: ${detail}` };
+    const band = `Rad ${stackNo(i, next.rows.length)}`;
+    return { kind: `rad-${i}`, label: bandDetail(band, a, b, ca, cb, (k) => k + 1) };
   }
   return null;
 }
@@ -101,9 +114,9 @@ function colChange(prev: State, next: State): Change | null {
     const band = `Kolumn ${ci + 1}`;
     // Fackantalet i kolumnen ändrades (TV-möbelns egna stommar) – det är den ändringen som
     // syns, inte vad som råkade hamna i facken.
-    if (na !== nb) return { kind: `kol-${ci}`, label: `${band}: fack ${nb > na ? "tillagt" : "borttaget"}` };
-    const detail = bandDetail(a, b, ca, cb, (k) => stackNo(k, cb.length));
-    return { kind: `kol-${ci}`, label: `${band}: ${detail}` };
+    if (na !== nb)
+      return { kind: `kol-${ci}`, label: `${band} fick ett fack ${nb > na ? "till" : "borttaget"}` };
+    return { kind: `kol-${ci}`, label: bandDetail(band, a, b, ca, cb, (k) => stackNo(k, cb.length)) };
   }
   return null;
 }
@@ -116,35 +129,41 @@ function colChange(prev: State, next: State): Change | null {
 // "Rad 2 ändrad".
 export function describeChange(prev: State, next: State): Change | null {
   if (prev.cols !== next.cols)
-    return { kind: "bredd", label: `Bredd ${realW(prev.cols)} → ${realW(next.cols)} cm` };
+    return { kind: "bredd", label: `Bredden ändrades till ${realW(next.cols)} cm` };
 
   const shape = (s: State) => s.rows.map((row) => row.h).join("/");
   if (shape(prev) !== shape(next))
-    return { kind: "hojd", label: `Höjd ${furnitureHeightCm(prev)} → ${furnitureHeightCm(next)} cm` };
+    return { kind: "hojd", label: `Höjden ändrades till ${furnitureHeightCm(next)} cm` };
 
   if (prev.mount !== next.mount)
-    return { kind: "montering", label: next.mount === "vagg" ? "Väggmonterad" : "Stående" };
+    return {
+      kind: "montering",
+      label: next.mount === "vagg" ? "Möbeln hängdes upp på vägg" : "Möbeln ställdes på golvet",
+    };
 
   if (prev.leg !== next.leg)
-    return { kind: "ben", label: `Ben: ${nameOf(LEGS, next.leg)}` };
+    return { kind: "ben", label: `Benen ändrades till ${nameOf(LEGS, next.leg).toLowerCase()}` };
 
   // Materialbytet drar med sig färgen (paletten byts), så de två är ett och samma steg.
   if (prev.material !== next.material)
-    return { kind: "material", label: `Material: ${next.material === "ek" ? "Ek" : "Laminat"}` };
+    return { kind: "material", label: `Materialet ändrades till ${next.material === "ek" ? "ek" : "laminat"}` };
 
   if (prev.color !== next.color) {
     const name = COLORS[next.material].find((c) => c[0] === next.color)?.[1] ?? next.color;
-    return { kind: "farg", label: `Färg: ${name}` };
+    return { kind: "farg", label: `Färgen ändrades till ${name.toLowerCase()}` };
   }
 
   if (prev.front !== next.front)
-    return { kind: "front", label: `Frontstil: ${FRONT_LABEL[next.front]}` };
+    return { kind: "front", label: `Frontstilen ändrades till ${FRONT_LABEL[next.front].toLowerCase()}` };
 
   if (prev.handle !== next.handle)
-    return { kind: "beslag", label: `Beslag: ${nameOf(HANDLES, next.handle)}` };
+    return { kind: "beslag", label: `Beslagen ändrades till ${nameOf(HANDLES, next.handle).toLowerCase()}` };
 
   if (prev.style !== next.style)
-    return { kind: "stil", label: `Stil: ${STYLES.find((s) => s.id === next.style)?.name ?? "egen"}` };
+    return {
+      kind: "stil",
+      label: `Stilen ändrades till ${STYLES.find((s) => s.id === next.style)?.name.toLowerCase() ?? "egen"}`,
+    };
 
   return next.axis === "kolumn" ? colChange(prev, next) : rowChange(prev, next);
 }
