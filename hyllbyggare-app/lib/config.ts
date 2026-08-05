@@ -1,6 +1,10 @@
 // Logik och data för hyllbyggaren – portad från prototypen, rena funktioner (inget DOM).
 
 export type Front = "plain" | "slats" | "glass";
+// Trästilarna – de enda som är ett globalt val. Glas är en egenskap hos en enskild lucka
+// (den är av glas, inte av trä med en yta), så det väljs per fack och kan inte sättas
+// från helhetsvyn. Se setWoodFront.
+export type WoodFront = "plain" | "slats";
 export type CellType = "o" | "l" | "d"; // öppen, lucka, låda
 export type Amount = "none" | "some" | "max";
 export type Mount = "vagg" | "staende";
@@ -32,7 +36,9 @@ export interface State {
   leg: string;
   material: Material;
   color: string;
-  front: Front;
+  // Möbelns trästil på fronterna. Glasluckor bär "glass" på facket självt och ligger
+  // utanför det här värdet – därför WoodFront och inte Front.
+  front: WoodFront;
   handle: string;
   style: string | null;
   // redigeringsaxel: "rad" (default) redigerar horisontella band, "kolumn" redigerar
@@ -153,7 +159,11 @@ export function fillRow(row: Row, cols: number): CellType[] {
 
 export function rowCells(row: Row, cols: number): Cell[] {
   if (row.cells) return row.cells;
-  return fillRow(row, cols).map((t) => cellObj(t, 1, row.front, t === "o" ? row.shelves : 0));
+  // Radens front är mallen för dess fack. Glas är undantaget: det sitter bara på luckor,
+  // så en låda i en glasrad faller tillbaka på den släta trästilen.
+  return fillRow(row, cols).map((t) =>
+    cellObj(t, 1, row.front === "glass" && t !== "l" ? "plain" : row.front, t === "o" ? row.shelves : 0),
+  );
 }
 
 // --- per-fack-redigering ---
@@ -341,13 +351,50 @@ export function layoutToHeightStep(rows: Row[]): number {
 }
 
 export function usesGlass(state: State): boolean {
-  return state.rows.some((row) => rowCells(row, state.cols).some((c) => c.type === "l" && c.front === "glass"));
+  return allCells(state).some((c) => c.type === "l" && c.front === "glass");
 }
 
 // Finns det några luckor eller lådor alls? Frontstil är bara relevant då. Kollar hela
 // rutnätet så det stämmer i både rad- och kolumnläge.
 export function hasFronts(state: State): boolean {
   return allCells(state).some((c) => c.type === "l" || c.type === "d");
+}
+
+// Finns det någon front i trä? Det globala trästil-valet har inget att göra i en möbel
+// där varenda front är av glas – då är stilen ett val utan verkan.
+export function hasWoodFronts(state: State): boolean {
+  return allCells(state).some((c) => (c.type === "l" || c.type === "d") && c.front !== "glass");
+}
+
+// Byt trästil på hela möbeln. Glas rörs ALDRIG: en glaslucka är av glas, inte av trä med
+// en yta, så den kan inte "bli ribbad". Trästilen skriver därför bara om de fronter som
+// faktiskt är i trä – i raderna (och deras ev. utskrivna fack) och i kolumnernas fack.
+// Vill man ta bort glaset gör man det på luckan, i bandredigeringen.
+export function setWoodFront(s: State, front: WoodFront): State {
+  const keep = (f: Front): Front => (f === "glass" ? "glass" : front);
+  const mapCells = (cells: Cell[]) => cells.map((c) => ({ ...c, front: keep(c.front) }));
+  return {
+    ...s,
+    front,
+    rows: s.rows.map((row) => ({
+      ...row,
+      front: keep(row.front),
+      cells: row.cells && mapCells(row.cells),
+    })),
+    colDefs: s.colDefs?.map((d) => (d.cells ? { ...d, cells: mapCells(d.cells) } : d)),
+  };
+}
+
+// Lägg glas på samtliga luckor. Finns inte som globalt val i byggaren (glas väljs per
+// lucka) – det här är vägen in för presets och djuplänkar, t.ex. en vitrin-konfiguration
+// på seriesidan. Lådor kan inte vara i glas och behåller sin trästil.
+export function glazeDoors(s: State): State {
+  const glaze = (c: Cell): Cell => (c.type === "l" ? { ...c, front: "glass" } : c);
+  return {
+    ...s,
+    rows: s.rows.map((row) => ({ ...row, cells: rowCells(row, s.cols).map(glaze) })),
+    colDefs: s.colDefs?.map((d, ci) => ({ ...d, cells: colCells(d, colHeight(s, ci), s.front).map(glaze) })),
+  };
 }
 
 export interface StyleDef {
@@ -584,7 +631,10 @@ export function buildState(
   if (opts.style) s = { ...s, style: opts.style, rows: applyStyle(opts.style, s.cols, s.rows) };
   if (opts.material) s.material = opts.material;
   if (opts.color) s.color = opts.color;
-  if (opts.front) s.front = opts.front;
+  // "glass" är ingen trästil utan en egenskap hos luckorna – en glaskonfiguration blir
+  // därför glas i alla luckor, inte ett globalt stilvärde (se setWoodFront/glazeDoors).
+  if (opts.front === "glass") s = glazeDoors(s);
+  else if (opts.front) s = setWoodFront(s, opts.front);
   return s;
 }
 
@@ -641,20 +691,25 @@ export function buildConfigState(
     heightUnits?: number;
   } = {},
 ): State | null {
-  const base = buildState(categoryId, { style: opts.style, material: opts.material, color: opts.color, front: opts.front });
+  // Fronten läggs på sist (nedan), inte här: måtten bygger om rader och kolumner och
+  // skulle annars slå ut glaset som just satts.
+  const base = buildState(categoryId, { style: opts.style, material: opts.material, color: opts.color });
   if (!base) return null;
   // Ingen mått-variation begärd → behåll kategorins default (bakåtkompatibelt).
-  if (opts.cols == null && opts.heightUnits == null) return base;
-
-  const colMin = categoryId === "tvbank" ? 3 : 2;
-  const cols = Math.max(colMin, Math.min(COLMAX, Math.round(opts.cols ?? base.cols)));
-  const units = Math.max(1, Math.min(ROWMAX, Math.round(opts.heightUnits ?? base.rows.length)));
-  const s: State = { ...base, cols };
-  if (base.axis === "kolumn") {
-    s.rows = Array.from({ length: units }, () => r({ h: 40 }));
-    s.colDefs = colDefsFor(categoryId, cols, units);
-  } else {
-    s.rows = rowsFor(categoryId, cols, units, base.style);
+  let s = base;
+  if (opts.cols != null || opts.heightUnits != null) {
+    const colMin = categoryId === "tvbank" ? 3 : 2;
+    const cols = Math.max(colMin, Math.min(COLMAX, Math.round(opts.cols ?? base.cols)));
+    const units = Math.max(1, Math.min(ROWMAX, Math.round(opts.heightUnits ?? base.rows.length)));
+    s = { ...base, cols };
+    if (base.axis === "kolumn") {
+      s.rows = Array.from({ length: units }, () => r({ h: 40 }));
+      s.colDefs = colDefsFor(categoryId, cols, units);
+    } else {
+      s.rows = rowsFor(categoryId, cols, units, base.style);
+    }
   }
+  if (opts.front === "glass") return glazeDoors(s);
+  if (opts.front) return setWoodFront(s, opts.front);
   return s;
 }
