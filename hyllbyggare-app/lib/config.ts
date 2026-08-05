@@ -106,6 +106,13 @@ export const HANDLES: [string, string, string][] = [
 
 export const FRONT_LABEL: Record<Front, string> = { plain: "Slät", slats: "Ribbor", glass: "Glas" };
 export const AMOUNT_LABEL: Record<Amount, string> = { none: "Inga", some: "Några", max: "Alla" };
+export const CELL_LABEL: Record<CellType, string> = { o: "Öppet", d: "Låda", l: "Lucka" };
+
+// Vertikala staplar räknas nerifrån och upp: det som står på golvet är nummer 1, så som man
+// läser en hylla. Modellen lagrar dem uppifrån och ner (listorna ritas i samma ordning som de
+// staplas), så numret är alltid en spegling av indexet – aldrig indexet självt. Vågräta band
+// räknas från vänster och rör inte den här funktionen.
+export const stackNo = (i: number, count: number) => count - i;
 
 // --- regler / villkor (representativa; bekräfta med ACTONA) ---
 export const maxShelves = (h: number) => (h >= 80 ? 2 : h >= 40 ? 1 : 0);
@@ -328,6 +335,14 @@ export const stackCm = (heights: number[]) => {
   return Math.round(mm / 10);
 };
 export const realH = (rows: Row[]) => stackCm(rows.map((x) => x.h));
+
+// Möbelns höjd i cm. Kolumner med egen höjd (TV-möbler) gör toppen ojämn – då är möbeln så
+// hög som dess högsta sektion, inte som radstapeln.
+export function furnitureHeightCm(S: State): number {
+  if (S.axis === "kolumn" && S.category === "tvbank")
+    return Math.max(1, ...Array.from({ length: S.cols }, (_, ci) => colCm(S, ci)));
+  return realH(S.rows);
+}
 
 // --- höjdstege ---
 // Höjd-reglaget växer i 20 cm-steg. Man bygger nerifrån och uppåt: basen (nedersta

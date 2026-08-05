@@ -2,7 +2,7 @@
 
 import { useRef, useState, useLayoutEffect, useEffect } from "react";
 import Image from "next/image";
-import { Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Trash2, RotateCcw, Sofa, Pencil, Truck, MoreHorizontal } from "lucide-react";
+import { Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Trash2, RotateCcw, Sofa, Pencil, Truck, MoreHorizontal, Undo2, History } from "lucide-react";
 import { Heading, Text } from "./Type";
 import Tillval from "./TillvalCompact";
 import ProductInfo from "./ProductInfo";
@@ -10,10 +10,11 @@ import { TILLVAL_PRODUCTS, offerAmount, formatKr, type TillvalProduct } from "@/
 import {
   COLORS, LEGS, HANDLES, STYLES, FRONT_LABEL, CATEGORIES,
   U, STEP, COLMAX, ROWMAX, HEIGHT_STEPS, type State, type Row, type Amount, type Front, type WoodFront, type ColDef, type CellType,
-  newRow, r, cellObj, applyStyle, applyColStyle, rowCells, gridCells, fillColumn, colCells, allCells, colHeight, colCellHeights, colCm, cellsToCm, realW, realH, maxShelves, drawersAllowed, fitAmount, hasFronts, hasWoodFronts, usesGlass, setWoodFront,
+  newRow, r, cellObj, applyStyle, applyColStyle, rowCells, gridCells, fillColumn, colCells, allCells, colHeight, colCellHeights, colCm, cellsToCm, realW, maxShelves, drawersAllowed, fitAmount, hasFronts, hasWoodFronts, usesGlass, setWoodFront,
   fitCells, normalizeCells, setRowCell, setRowCells, setColCell, setColCells, addColCell, removeColCell, colDefsFor,
-  heightStepToLayout, layoutToHeightStep, type Cell,
+  heightStepToLayout, layoutToHeightStep, furnitureHeightCm, stackNo, CELL_LABEL, type Cell,
 } from "@/lib/config";
+import { useConfigHistory, type HistoryEntry } from "@/lib/history";
 
 const initial: State = {
   cols: 4,
@@ -35,7 +36,10 @@ const lum = (hex: string) => {
 const hcol = (bg: string) => (lum(bg) > 0.62 ? "rgba(0,0,0,.45)" : "rgba(255,255,255,.92)");
 
 export default function Configurator({ initialState = initial, onBack }: { initialState?: State; onBack?: () => void }) {
-  const [S, setS] = useState<State>(initialState);
+  // State med historik: setS beter sig som en vanlig useState-sättare, men varje ändring
+  // som syns på möbeln blir ett steg i ändringsloggen (se lib/history.ts).
+  const { S, setS, entries: changes, cursor, canUndo, undo, jumpTo } = useConfigHistory(initialState);
+  const [logOpen, setLogOpen] = useState(false);
   // active = index på bandet som redigeras i panelen (nivå 2); null = globala val (nivå 1).
   const [active, setActive] = useState<number | null>(null);
   // activeCell = facket inom bandet som redigeras (fliken "Fack N"). Valen i nivå 2 gäller
@@ -306,7 +310,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   // Den hopfällda verktygsmenyn (mobil) stängs samtidigt – den göms i nivå 2 och ska inte
   // stå kvar öppen när man kommer tillbaka till helheten.
   const selectBand = (i: number) => { setActive(i); setActiveCell(-1); };
-  const openBand = (i: number) => { selectBand(i); setToolsOpen(false); };
+  const openBand = (i: number) => { selectBand(i); setToolsOpen(false); setLogOpen(false); };
   const backToLevel1 = () => setActive(null);
 
   // När man går in i bandredigering (nivå 2) kan man redan ha scrollat långt ner förbi den
@@ -382,7 +386,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   const widthCm = realW(S.cols);
   // Kolumnernas verkliga höjd i cm (fackens höjder staplade) – möbelns höjd är den högsta.
   const colCms = S.axis === "kolumn" ? Array.from({ length: S.cols }, (_, ci) => colCm(S, ci)) : [];
-  const heightCm = perColHeight ? Math.max(1, ...colCms) : realH(S.rows);
+  const heightCm = furnitureHeightCm(S);
   // Mått för det inzoomade bandet (nivå 2). Rad: möbelns bredd × radens höjd. Kolumn: en
   // modulbredd × kolumnens höjd. null → helhetens mått (nivå 1).
   const bandDims = (() => {
@@ -481,6 +485,13 @@ export default function Configurator({ initialState = initial, onBack }: { initi
     { label: "Visa miljö", icon: <Sofa size={18} />, active: showScene, onClick: () => setShowScene((v) => !v), keepOpen: true },
     { label: "Visa mått", icon: <Ruler size={18} />, active: showDims, onClick: () => setShowDims((v) => !v), keepOpen: true },
   ];
+  // Mobil: ändringsloggen bor i mer-menyn. Ångra står för sig själv i bildens nedre högra
+  // hörn – den ska nås med ett tryck mitt i en ändring man vill ta tillbaka, inte fällas ut.
+  // Loggen är en egen yta och stänger därför menyn bakom sig (keepOpen: false).
+  const mobileTools = [
+    { label: "Ändringar", icon: <History size={18} />, active: logOpen, onClick: () => setLogOpen((v) => !v), keepOpen: false },
+    ...tools,
+  ];
 
   return (
     <>
@@ -527,9 +538,23 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             </span>
             <Text variant="body" className="font-semibold">Tillbaka</Text>
           </button>
-          {/* desktop: verktygen inline i toppen. mobil: hopfällda i nedre vänstra
-              hörnet – se mer-knappen längre ner i sektionen. */}
+          {/* desktop: ångra, ändringsloggen och vy-verktygen inline i toppen. mobil: ångra
+              sitter i bildens nedre högra hörn och resten i mer-menyn nere till vänster. */}
           <div className="hidden items-center gap-2 lg:flex">
+            <ToolButton label="Ångra" disabled={!canUndo} onClick={undo}>
+              <Undo2 size={18} />
+            </ToolButton>
+            <div className="relative">
+              <ToolButton label="Ändringar" active={logOpen} onClick={() => setLogOpen((v) => !v)}>
+                <History size={18} />
+              </ToolButton>
+              {logOpen && (
+                <ChangeLog
+                  className="absolute right-0 top-full mt-2 w-72"
+                  entries={changes} cursor={cursor} onJump={jumpTo} onClose={() => setLogOpen(false)}
+                />
+              )}
+            </div>
             {tools.map((t) => (
               <ToolButton key={t.label} label={t.label} active={t.active} onClick={t.onClick}>
                 {t.icon}
@@ -594,7 +619,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             />
           )}
           <div className="absolute bottom-full left-0 mb-2 flex flex-col-reverse items-start gap-2">
-            {tools.map((t, i) => (
+            {mobileTools.map((t, i) => (
               <div
                 key={t.label}
                 style={{
@@ -606,7 +631,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
                     ? "opacity 200ms ease-out, transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1)"
                     : "opacity 160ms ease-in, transform 200ms cubic-bezier(0.4, 0, 1, 1)",
                   // stegning: öppning nerifrån och upp, stängning uppifrån och ned
-                  transitionDelay: `${(toolsOpen ? i : tools.length - 1 - i) * 45}ms`,
+                  transitionDelay: `${(toolsOpen ? i : mobileTools.length - 1 - i) * 45}ms`,
                 }}
               >
                 <ToolButton
@@ -633,6 +658,24 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             >
               {toolsOpen ? <X size={18} /> : <MoreHorizontal size={18} />}
             </span>
+          </ToolButton>
+          {/* Loggen fälls ut uppåt över mer-knappen, inte som en kolumn bredvid den: den är
+              en lista att läsa, inte ännu ett verktyg i raden. Bredden kramar skärmen. */}
+          {logOpen && (
+            <ChangeLog
+              className="absolute bottom-full left-0 mb-2 w-[min(18rem,calc(100vw-2rem))]"
+              entries={changes} cursor={cursor} onJump={jumpTo} onClose={() => setLogOpen(false)}
+            />
+          )}
+        </div>
+
+        {/* mobil: ångra i bildens nedre HÖGRA hörn, mitt emot verktygsmenyn. Till skillnad
+            från vy-verktygen står den kvar under bandredigering – det är just då man vill
+            kunna ta tillbaka ett steg. Arket underifrån täcker de nedersta 24 px av
+            sektionen, så knappen lyfts ovanför arkets kant i stället för att gömmas bakom. */}
+        <div className={`absolute right-4 z-20 lg:hidden ${active !== null ? "bottom-12" : "bottom-4"}`}>
+          <ToolButton label="Ångra" disabled={!canUndo} onClick={undo}>
+            <Undo2 size={18} />
           </ToolButton>
         </div>
       </section>
@@ -1536,21 +1579,70 @@ export function Range({ label, value, max, pill, onSet }: { label: string; value
   );
 }
 
-function ToolButton({ label, active = false, onClick, children }: {
-  label: string; active?: boolean; onClick?: () => void; children: React.ReactNode;
+function ToolButton({ label, active = false, disabled = false, onClick, children }: {
+  label: string; active?: boolean; disabled?: boolean; onClick?: () => void; children: React.ReactNode;
 }) {
   return (
     <button
       aria-label={label}
       title={label}
       aria-pressed={active}
+      disabled={disabled}
       onClick={onClick}
-      className={`flex h-11 w-11 items-center justify-center rounded-full border transition-colors duration-fast ${
+      className={`flex h-11 w-11 items-center justify-center rounded-full border transition-colors duration-fast disabled:pointer-events-none disabled:opacity-40 ${
         active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:border-foreground/40"
       }`}
     >
       {children}
     </button>
+  );
+}
+
+// Ändringsloggen: allt som hänt med bygget, nyast överst, med utgångsläget underst. Varje rad
+// är ett hopp – inte bara en historik att läsa – så man kan gå tillbaka flera steg på en gång
+// och lika gärna framåt igen. Stegen efter markören är alltså inte förlorade, de är blekta:
+// de lever tills man gör en NY ändring, och då kapas svansen (se lib/history.ts).
+function ChangeLog({ className = "", entries, cursor, onJump, onClose }: {
+  // className bär placeringen: loggen hänger under historik-knappen på desktop och över
+  // mer-knappen på mobil. Allt annat – form, storlek, innehåll – är detsamma.
+  className?: string;
+  entries: HistoryEntry[]; cursor: number; onJump: (i: number) => void; onClose: () => void;
+}) {
+  return (
+    <>
+      {/* Klick utanför stänger. Ligger under panelen men över allt annat i bilden. */}
+      <button aria-hidden tabIndex={-1} onClick={onClose} className="fixed inset-0 z-30 cursor-default" />
+      <div className={`z-40 overflow-hidden border border-border bg-card shadow-lg rounded-[4px] ${className}`}>
+        <div className="border-b border-border px-4 py-3">
+          <Text variant="body" className="font-semibold">Ändringar</Text>
+        </div>
+        <ol className="max-h-[min(50svh,360px)] overflow-y-auto py-1">
+          {entries.map((_, i) => entries.length - 1 - i).map((i) => {
+            const e = entries[i];
+            const here = i === cursor;
+            const undone = i > cursor;
+            return (
+              <li key={i}>
+                <button
+                  type="button"
+                  onClick={() => { onJump(i); onClose(); }}
+                  className={`flex w-full items-center gap-3 px-4 py-2 text-left transition-colors duration-fast hover:bg-secondary ${
+                    undone ? "opacity-40" : ""
+                  }`}
+                >
+                  {/* Markören som en punkt i en tidslinje – fylld där man står. */}
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${here ? "bg-primary" : "bg-border"}`} />
+                  <span className={`min-w-0 flex-1 truncate font-body text-sm ${here ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                    {e.label}
+                  </span>
+                  {here && <span className="shrink-0 font-body text-xs text-muted-foreground">Här</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </>
   );
 }
 
@@ -2341,7 +2433,6 @@ function BandMsg({ children }: { children: React.ReactNode }) {
   return <Text variant="small" className="-mt-2 mb-6 text-muted-foreground">{children}</Text>;
 }
 
-const CELL_LABEL: Record<CellType, string> = { o: "Öppet", d: "Låda", l: "Lucka" };
 // Låda före lucka, som i skissen. Fack som är för höga för en låda får inte alternativet
 // alls – villkoren visas genom vilka val som finns, inte i text.
 const cellOpts = (drawers: boolean): [string, string][] =>
@@ -2365,14 +2456,6 @@ function FackRow({ label, children }: { label: string; children: React.ReactNode
       <div className="min-w-max flex-1">{children}</div>
     </div>
   );
-}
-
-// Vertikala staplar räknas nerifrån och upp: det som står på golvet är nummer 1, så som man
-// läser en hylla. Modellen lagrar dem uppifrån och ner (listorna ritas i samma ordning som de
-// staplas), så numret är alltid en spegling av indexet – aldrig indexet självt. Vågräta band
-// räknas från vänster och rör inte den här funktionen.
-function stackNo(i: number, count: number) {
-  return count - i;
 }
 
 // Flikar för bandets fack. Raden växer med antalet fack, så ett brett band får fler flikar
