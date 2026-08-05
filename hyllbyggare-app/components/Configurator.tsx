@@ -550,7 +550,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
               </ToolButton>
               {logOpen && (
                 <ChangeLog
-                  className="absolute right-0 top-full mt-2 w-72"
+                  className="absolute right-0 top-full mt-2 w-80"
                   entries={changes} cursor={cursor} onJump={jumpTo} onClose={() => setLogOpen(false)}
                 />
               )}
@@ -647,23 +647,28 @@ export default function Configurator({ initialState = initial, onBack }: { initi
               </div>
             ))}
           </div>
-          <ToolButton
-            label={toolsOpen ? "Stäng verktyg" : "Fler verktyg"}
-            active={toolsOpen}
-            onClick={() => setToolsOpen((v) => !v)}
-          >
-            <span
-              className="transition-transform duration-base ease-default"
-              style={{ transform: toolsOpen ? "rotate(90deg)" : "none" }}
+          {/* Mer-knappen ligger ÖVER loggens klick-utanför-yta (z-40 mot dess z-30) och stänger
+              loggen själv. Annars äts trycket av den ytan medan loggen är öppen: knappen ser
+              död ut, och det tar två tryck att komma till verktygen. */}
+          <div className="relative z-40">
+            <ToolButton
+              label={toolsOpen ? "Stäng verktyg" : "Fler verktyg"}
+              active={toolsOpen}
+              onClick={() => { setLogOpen(false); setToolsOpen((v) => !v); }}
             >
-              {toolsOpen ? <X size={18} /> : <MoreHorizontal size={18} />}
-            </span>
-          </ToolButton>
+              <span
+                className="transition-transform duration-base ease-default"
+                style={{ transform: toolsOpen ? "rotate(90deg)" : "none" }}
+              >
+                {toolsOpen ? <X size={18} /> : <MoreHorizontal size={18} />}
+              </span>
+            </ToolButton>
+          </div>
           {/* Loggen fälls ut uppåt över mer-knappen, inte som en kolumn bredvid den: den är
               en lista att läsa, inte ännu ett verktyg i raden. Bredden kramar skärmen. */}
           {logOpen && (
             <ChangeLog
-              className="absolute bottom-full left-0 mb-2 w-[min(18rem,calc(100vw-2rem))]"
+              className="absolute bottom-full left-0 mb-2 w-[min(20rem,calc(100vw-2rem))]"
               entries={changes} cursor={cursor} onJump={jumpTo} onClose={() => setLogOpen(false)}
             />
           )}
@@ -1598,10 +1603,12 @@ function ToolButton({ label, active = false, disabled = false, onClick, children
   );
 }
 
-// Ändringsloggen: allt som hänt med bygget, nyast överst, med utgångsläget underst. Varje rad
-// är ett hopp – inte bara en historik att läsa – så man kan gå tillbaka flera steg på en gång
-// och lika gärna framåt igen. Stegen efter markören är alltså inte förlorade, de är blekta:
-// de lever tills man gör en NY ändring, och då kapas svansen (se lib/history.ts).
+// Ändringsloggen som en tidslinje: allt som hänt med bygget trätt på en lodrät linje, nyast
+// överst och utgångsläget underst. Varje rad är ett hopp – inte bara en historik att läsa – så
+// man kan gå tillbaka flera steg på en gång och lika gärna framåt igen. Stegen efter markören
+// är alltså inte förlorade, de är blekta: de lever tills man gör en NY ändring, och då kapas
+// svansen (se lib/history.ts). Etiketterna är hela meningar därifrån ("Bredden ändrades till
+// 155 cm") – en tidslinje läses som en berättelse, inte som en lista med fältnamn.
 function ChangeLog({ className = "", entries, cursor, onJump, onClose }: {
   // className bär placeringen: loggen hänger under historik-knappen på desktop och över
   // mer-knappen på mobil. Allt annat – form, storlek, innehåll – är detsamma.
@@ -1616,26 +1623,39 @@ function ChangeLog({ className = "", entries, cursor, onJump, onClose }: {
         <div className="border-b border-border px-4 py-3">
           <Text variant="body" className="font-semibold">Ändringar</Text>
         </div>
-        <ol className="max-h-[min(50svh,360px)] overflow-y-auto py-1">
-          {entries.map((_, i) => entries.length - 1 - i).map((i) => {
+        <ol className="max-h-[min(50svh,360px)] overflow-y-auto py-2">
+          {entries.map((_, i) => entries.length - 1 - i).map((i, pos, order) => {
             const e = entries[i];
             const here = i === cursor;
             const undone = i > cursor;
             return (
-              <li key={i}>
+              <li key={i} className="relative">
+                {/* Tidslinjens stam. Den dras MELLAN punkterna, inte förbi dem: kapad vid
+                    halva raden i listans båda ändar, så linjen börjar och slutar i en punkt
+                    i stället för att rinna ut i kanten. Stammen har samma tjocklek och färg
+                    som punkterna och löper obruten in i dem – ingen ring i panelens färg som
+                    klipper linjen, för det är just sammanhängandet som gör den till en kedja
+                    av steg och inte en lista med prickar. */}
+                <span
+                  aria-hidden
+                  style={{ top: pos === 0 ? "50%" : 0, bottom: pos === order.length - 1 ? "50%" : 0 }}
+                  className="absolute left-6 w-0.5 -translate-x-1/2 bg-border"
+                />
                 <button
                   type="button"
                   onClick={() => { onJump(i); onClose(); }}
-                  className={`flex w-full items-center gap-3 px-4 py-2 text-left transition-colors duration-fast hover:bg-secondary ${
+                  className={`relative flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors duration-fast hover:bg-secondary/60 ${
                     undone ? "opacity-40" : ""
                   }`}
                 >
-                  {/* Markören som en punkt i en tidslinje – fylld där man står. */}
-                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${here ? "bg-primary" : "bg-border"}`} />
-                  <span className={`min-w-0 flex-1 truncate font-body text-sm ${here ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+                  {/* En punkt per ändring. Den man står på är större och i primärfärgen – det
+                      är den enda markören av var man är, så etiketten "Här" behövs inte. */}
+                  <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+                    <span className={`rounded-full ${here ? "h-3 w-3 bg-primary" : "h-2 w-2 bg-border"}`} />
+                  </span>
+                  <span className={`min-w-0 flex-1 font-body text-sm leading-snug ${here ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
                     {e.label}
                   </span>
-                  {here && <span className="shrink-0 font-body text-xs text-muted-foreground">Här</span>}
                 </button>
               </li>
             );
