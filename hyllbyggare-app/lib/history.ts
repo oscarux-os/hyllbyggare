@@ -174,7 +174,9 @@ export interface History {
   entries: HistoryEntry[];
   cursor: number;
   canUndo: boolean;
+  canRedo: boolean;
   undo: () => void;
+  redo: () => void;
   jumpTo: (i: number) => void;
 }
 
@@ -214,24 +216,34 @@ export function useConfigHistory(initial: State): History {
   }, []);
 
   const undo = useCallback(() => setH((h) => (h.cursor > 0 ? { ...h, cursor: h.cursor - 1 } : h)), []);
+  // Gör om: markören framåt igen i samma svans som ångra lämnade kvar. Den lever bara tills
+  // man gör en NY ändring – då kapas svansen i setS och det finns inget att gå framåt till.
+  const redo = useCallback(
+    () => setH((h) => (h.cursor < h.entries.length - 1 ? { ...h, cursor: h.cursor + 1 } : h)),
+    [],
+  );
   const jumpTo = useCallback(
     (i: number) => setH((h) => (i >= 0 && i < h.entries.length ? { ...h, cursor: i } : h)),
     [],
   );
 
-  // Cmd/Ctrl+Z – ångra är en knapp i bilden, men på desktop förväntar man sig tangenten.
+  // Cmd/Ctrl+Z och Cmd/Ctrl+Shift+Z (samt Ctrl+Y på Windows) – knapparna finns i bilden, men
+  // på desktop förväntar man sig tangenterna.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z" || e.shiftKey) return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key !== "z" && key !== "y") return;
       // Står markören i ett fält är Cmd+Z fältets egen ångra, inte möbelns.
       const el = e.target as HTMLElement | null;
       if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
       e.preventDefault();
-      undo();
+      if (key === "y" || e.shiftKey) redo();
+      else undo();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo]);
+  }, [undo, redo]);
 
   return useMemo(
     () => ({
@@ -240,9 +252,11 @@ export function useConfigHistory(initial: State): History {
       entries: h.entries,
       cursor: h.cursor,
       canUndo: h.cursor > 0,
+      canRedo: h.cursor < h.entries.length - 1,
       undo,
+      redo,
       jumpTo,
     }),
-    [h, setS, undo, jumpTo],
+    [h, setS, undo, redo, jumpTo],
   );
 }
