@@ -135,14 +135,39 @@ export default function Configurator({ initialState = initial, onBack }: { initi
         colDefs,
       };
     });
+  // Kolumnläge: kolumnernas fack hänger på den delade stommen, och facken numreras uppifrån
+  // (index 0 = överst). Växer stommen uppåt hör det nya facket alltså överst – annars glider
+  // allt innehåll ett steg upp och basen byter fack. Bara materialiserade cells behöver
+  // flyttas; mängd-modellen (doors/drawers) fyller alltid nerifrån av sig själv. Kolumner med
+  // egen höjd (TV-möbler) står utanför den globala höjden och lämnas orörda.
+  const anchorColCells = (s: State, before: number, after: number): ColDef[] | undefined => {
+    const d = after - before;
+    if (!d || !s.colDefs) return s.colDefs;
+    return s.colDefs.map((def) => {
+      if (!def.cells || def.height !== undefined) return def;
+      const cells = colCells(def, before, s.front);
+      return {
+        ...def,
+        cells: d > 0 ? [...Array.from({ length: d }, () => cellObj("o", 1, s.front, 0)), ...cells] : cells.slice(-d),
+      };
+    });
+  };
+
+  // Möbeln står på golvet: basen (nedersta raden) ligger fast och nya rader läggs till
+  // överst, precis som höjdreglaget gör. Att lägga till nederst hade skjutit hela möbeln
+  // uppåt och flyttat den rad man just tittade på.
+  //
+  // En partiell rad (20 cm) hör alltid överst – det är höjdreglagets modell (se
+  // heightStepToLayout). Därför läggs den nya hela raden UNDER en sådan topprad, så att
+  // reglaget fortsätter läsa samma silhuett efteråt.
   const setRows = (n: number) =>
     setS((s) => {
       n = Math.min(ROWMAX, Math.max(1, n));
       let rows = [...s.rows];
-      while (rows.length < n) rows.push(newRow());
-      while (rows.length > n) rows.pop();
+      while (rows.length < n) rows.splice(rows[0]?.h === 20 ? 1 : 0, 0, newRow());
+      while (rows.length > n) rows.shift();
       if (s.style && s.axis !== "kolumn") rows = applyStyle(s.style, s.cols, rows);
-      return { ...s, rows };
+      return { ...s, rows, colDefs: anchorColCells(s, s.rows.length, rows.length) };
     });
 
   // Höjd-reglaget: 20 cm-steg, byggt nerifrån och uppåt. Basen (nedersta raden)
@@ -165,7 +190,8 @@ export default function Configurator({ initialState = initial, onBack }: { initi
         return nr;
       });
       if (s.style && s.axis !== "kolumn") rows = applyStyle(s.style, s.cols, rows);
-      return { ...s, rows };
+      // Samma ankring av kolumnernas fack som i setRows – reglaget lägger också till överst.
+      return { ...s, rows, colDefs: anchorColCells(s, s.rows.length, rows.length) };
     });
 
   // ---- stil ----
@@ -582,11 +608,17 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           </div>
           {/* Lägg-till-knapparna gäller hela möbeln och göms medan bilden är inzoomad på ett
               band (nivå 2) – där skulle de dessutom ligga utanför bild. Man lägger till rader
-              och kolumner i helhetsvyn, ett klick bort via krysset i panelhuvudet. */}
+              och kolumner i helhetsvyn, ett klick bort via krysset i panelhuvudet.
+              Vid max höjd respektive max bredd försvinner knappen helt: en knapp som inte
+              kan göra något är värre än ingen knapp. Reglagen visar taket. */}
           {stage.w > 0 && active === null && (
             <>
-              <AddButton className="-translate-x-1/2 translate-y-[calc(-100%-24px)]" style={{ left: stage.x + stage.w / 2, top: stage.y, transition: stageMove(stage.glide, "left", "top") }} label="Lägg till rad" onClick={() => setRows(S.rows.length + 1)} />
-              <AddButton className="-translate-y-1/2 translate-x-6" style={{ left: stage.x + stage.w, top: stage.y + stage.h / 2, transition: stageMove(stage.glide, "left", "top") }} label="Lägg till kolumn" onClick={() => setCols(S.cols + 1)} />
+              {S.rows.length < ROWMAX && (
+                <AddButton className="-translate-x-1/2 translate-y-[calc(-100%-24px)]" style={{ left: stage.x + stage.w / 2, top: stage.y, transition: stageMove(stage.glide, "left", "top") }} label="Lägg till rad" onClick={() => setRows(S.rows.length + 1)} />
+              )}
+              {S.cols < COLMAX && (
+                <AddButton className="-translate-y-1/2 translate-x-6" style={{ left: stage.x + stage.w, top: stage.y + stage.h / 2, transition: stageMove(stage.glide, "left", "top") }} label="Lägg till kolumn" onClick={() => setCols(S.cols + 1)} />
+              )}
             </>
           )}
           {/* Måttlinjer: hela möbeln i helhetsvyn – det inzoomade bandets egna mått i nivå 2.
