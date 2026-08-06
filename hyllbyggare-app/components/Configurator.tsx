@@ -204,8 +204,21 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       return { ...s, rows };
     });
 
-  const removeRow = (i: number) =>
-    setS((s) => (s.rows.length <= 1 ? s : { ...s, rows: s.rows.filter((_, idx) => idx !== i) }));
+  // Ta bort raden man redigerar. Minst en rad måste finnas kvar – en möbel utan rader är
+  // ingen möbel. Stilen räknas om på de rader som blir kvar, precis som när höjdreglaget
+  // tar bort en rad: annars sitter ett mönster komponerat för fyra rader kvar i tre.
+  //
+  // Vyn går tillbaka till helheten efteråt. Bandet man stod i finns inte längre, och att
+  // stanna i nivå 2 hade lämnat panelen på den rad som råkar ta samma index – man hade
+  // fortsatt redigera, men en annan rad än den man tittade på.
+  const removeRow = (i: number) => {
+    setS((s) => {
+      if (s.rows.length <= 1) return s;
+      const rows = s.rows.filter((_, idx) => idx !== i);
+      return { ...s, rows: s.style && s.axis !== "kolumn" ? applyStyle(s.style, s.cols, rows) : rows };
+    });
+    setActive(null);
+  };
 
   // ---- per kolumn (kolumnläge) – samma mängd-modell som raderna ----
   const emptyCol = (): ColDef => ({ doors: "none", drawers: "none" });
@@ -221,12 +234,26 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       });
       return { ...s, colDefs };
     });
-  const removeCol = (ci: number) =>
+  // Ta bort kolumnen man redigerar – radernas motsvarighet, med samma tre regler: minst en
+  // kolumn kvar, stilen räknas om på dem som blir kvar, och vyn går tillbaka till helheten
+  // eftersom bandet man stod i är borta. Att kolumnerna ÄR bredden gör att möbeln blir en
+  // modul smalare av det, precis som breddreglaget hade gjort.
+  const removeCol = (ci: number) => {
     setS((s) => {
       if (s.cols <= 1) return s;
+      const cols = s.cols - 1;
       const colDefs = (s.colDefs ?? Array.from({ length: s.cols }, emptyCol)).filter((_, idx) => idx !== ci);
-      return { ...s, cols: s.cols - 1, colDefs };
+      return {
+        ...s,
+        cols,
+        colDefs: s.style ? applyColStyle(s.style, cols, colDefs) : colDefs,
+        // Rader med per-fack-innehåll klipps till den nya bredden så att spannen fortsätter
+        // summera till antalet kolumner (samma som i setCols).
+        rows: s.rows.map((row) => (row.cells ? { ...row, cells: fitCells(row.cells, cols) } : row)),
+      };
     });
+    setActive(null);
+  };
 
   // ---- per fack ----
   // Facken redigeras ett i taget, eller alla på en gång ("Alla"-fliken → index -1).
@@ -447,6 +474,8 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       onEditCol={editCol}
       onAddCell={addCell}
       onRemoveCell={removeCell}
+      onRemoveRow={removeRow}
+      onRemoveCol={removeCol}
       onBack={backToLevel1}
     />
   );
@@ -2522,8 +2551,8 @@ function FackTabs({ count, index, bottomUp = false, onAdd, onSelect, children }:
   onSelect: (i: number) => void; children: React.ReactNode;
 }) {
   // "Alla" är meningslös på ett band med ett enda fack – då är den samma sak som fack 1.
-  // Rubriken säger redan "Fack", så flikarna bär bara sitt nummer: kortare flikar betyder att
-  // fler ryms utan att raden behöver scrollas.
+  // Rubriken säger redan "Ändra fack", så flikarna bär bara sitt nummer: kortare flikar betyder
+  // att fler ryms utan att raden behöver scrollas.
   // Numren stiger alltid åt höger i flikraden. I en stapel (bottomUp) betyder det att raden
   // börjar i botten av bandet och går uppåt, så flikordningen är motsatt modellens.
   const tabs: [number, string][] = [
@@ -2541,7 +2570,7 @@ function FackTabs({ count, index, bottomUp = false, onAdd, onSelect, children }:
   }, [pos]);
   return (
     <div className="mb-6">
-      <Text variant="body" className="mb-2 block font-semibold">Fack</Text>
+      <Text variant="body" className="mb-2 block font-semibold">Ändra fack</Text>
       {/* Plusknappen ligger UTANFÖR den scrollande fliklistan – annars glider den ur bild
           precis när man har många fack, alltså när man behöver den. Den är inte heller en
           flik (role="tab"), så piltangenterna i fliklistan hoppar inte in i den. */}
@@ -2681,7 +2710,7 @@ function FackPanel({ cells, heights, ownHeight = false, onSet, onRemove, removeL
 
 // BandPanel byter ut hela panelinnehållet (nivå 2). Redigerar en rad (rad-axeln) eller
 // en kolumn (kolumnläge). All villkorslogik lånas från lib/config.ts – inget skrivs om här.
-function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, onEditRow, onEditRowCell, onEditColCell, onEditCol, onAddCell, onRemoveCell, onBack }: {
+function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, onEditRow, onEditRowCell, onEditColCell, onEditCol, onAddCell, onRemoveCell, onRemoveRow, onRemoveCol, onBack }: {
   S: State; index: number;
   // cell: vald fackflik i bandet (klampas mot antalet fack – bandet kan ha krympt)
   cell: number;
@@ -2697,6 +2726,9 @@ function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, on
   // Fackantal per kolumn – bara TV-möbler (se ColumnBand).
   onAddCell: (ci: number) => void;
   onRemoveCell: (ci: number, ki: number) => void;
+  // Tar bort hela bandet. Går bara så länge det finns mer än ett – se nedan.
+  onRemoveRow: (i: number) => void;
+  onRemoveCol: (ci: number) => void;
   onBack: () => void;
 }) {
   const isCol = S.axis === "kolumn";
@@ -2714,10 +2746,12 @@ function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, on
       {/* Panelhuvud för redigeringsläget: rubrik med bandets nummer + stängkryss. */}
       <BandHeader index={index} count={count} isCol={isCol} overlay={overlay} onSelect={onSelect} onBack={onBack} />
 
+      {/* Sista bandet går inte att ta bort: möbeln måste ha något att stå för. Då lämnas
+          onRemove tom och knappen finns inte alls (se RemoveBand). */}
       {isCol ? (
-        <ColumnBand S={S} index={index} cell={cell} onSelectCell={onSelectCell} onEdit={onEditCol} onEditCell={onEditColCell} onAddCell={onAddCell} onRemoveCell={onRemoveCell} />
+        <ColumnBand S={S} index={index} cell={cell} onSelectCell={onSelectCell} onEdit={onEditCol} onEditCell={onEditColCell} onAddCell={onAddCell} onRemoveCell={onRemoveCell} onRemove={count > 1 ? () => onRemoveCol(index) : undefined} />
       ) : (
-        <RowBand row={row} index={index} cols={S.cols} cell={cell} onSelectCell={onSelectCell} onEdit={onEditRow} onEditCell={onEditRowCell} />
+        <RowBand row={row} index={index} cols={S.cols} cell={cell} onSelectCell={onSelectCell} onEdit={onEditRow} onEditCell={onEditRowCell} onRemove={count > 1 ? () => onRemoveRow(index) : undefined} />
       )}
     </div>
   );
@@ -2725,11 +2759,13 @@ function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, on
 
 // Radredigering. Raden bär bara sin höjd – innehållet väljs per fack i flikarna, så en rad
 // kan blanda öppna fack, lådor och luckor i stället för att tvingas till ett gemensamt val.
-function RowBand({ row, index, cols, cell, onSelectCell, onEdit, onEditCell }: {
+function RowBand({ row, index, cols, cell, onSelectCell, onEdit, onEditCell, onRemove }: {
   row: Row; index: number; cols: number; cell: number;
   onSelectCell: (i: number) => void;
   onEdit: (i: number, patch: Partial<Row>) => void;
   onEditCell: (i: number, ci: number, patch: Partial<Cell>) => void;
+  // onRemove: tar bort hela raden. Saknas den finns bara den här raden kvar i möbeln.
+  onRemove?: () => void;
 }) {
   const cells = rowCells(row, cols);
   // Facken kan ha blivit färre (smalare möbel) sedan fliken valdes. -1 = "Alla"-fliken, som
@@ -2753,19 +2789,51 @@ function RowBand({ row, index, cols, cell, onSelectCell, onEdit, onEditCell }: {
           onSet={(patch) => onEditCell(index, ci, patch)}
         />
       </FackTabs>
+
+      <RemoveBand label="Ta bort rad" onClick={onRemove} />
     </>
+  );
+}
+
+// Ta bort hela bandet man redigerar. Ligger under facken och utanför fackkortet: det här
+// gäller bandet, inte den flik man står i. Vänsterställd, i linje med etiketterna och
+// flikraden ovanför – knappen tillhör panelens vänsterkant som allt annat man läser i den.
+//
+// En vanlig knapp, inte en tyst textknapp: att ta bort ett band är ett av de tyngre valen i
+// nivå 2 och ska se ut som något man trycker på. Formen och ytan är panelens övriga knappar,
+// texten likaså – rött i vila gjorde knappen till en varning innan man ens siktat på den.
+// Avsikten hörs i etiketten och syns när man är på väg att trycka: fyllningen blir röd vid
+// hover.
+//
+// onClick saknas när bandet inte GÅR att ta bort (sista raden, enda kolumnen). Då finns
+// knappen inte alls i stället för att sitta där avstängd.
+function RemoveBand({ label, onClick }: { label: string; onClick?: () => void }) {
+  if (!onClick) return null;
+  return (
+    // Lyft närmare kortet än flikblockets 24 px – knappen hör till det man just redigerade.
+    <div className="-mt-3 flex">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-2 rounded-[4px] bg-secondary px-4 py-2 text-base font-medium leading-6 tracking-[-0.2px] text-foreground transition-[background-color,color,transform] duration-base ease-default hover:bg-destructive hover:text-destructive-foreground active:scale-[0.97]"
+      >
+        <Trash2 size={16} /> {label}
+      </button>
+    </div>
   );
 }
 
 // Kolumnredigering (kolumnläge). Som raden: kolumnen bär sin höjd, innehållet väljs per fack
 // uppifrån och ner i flikarna.
-function ColumnBand({ S, index, cell, onSelectCell, onEdit, onEditCell, onAddCell, onRemoveCell }: {
+function ColumnBand({ S, index, cell, onSelectCell, onEdit, onEditCell, onAddCell, onRemoveCell, onRemove }: {
   S: State; index: number; cell: number;
   onSelectCell: (i: number) => void;
   onEdit: (ci: number, patch: Partial<ColDef>) => void;
   onEditCell: (ci: number, ki: number, patch: Partial<Cell>) => void;
   onAddCell: (ci: number) => void;
   onRemoveCell: (ci: number, ki: number) => void;
+  // onRemove: tar bort hela kolumnen. Saknas den är det möbelns enda kolumn.
+  onRemove?: () => void;
 }) {
   const def = S.colDefs?.[index] ?? { doors: "none", drawers: "none" };
   // Egen höjd per kolumn – bara TV-möbler (ojämn topp), som default+override mot Form-höjden.
@@ -2781,22 +2849,26 @@ function ColumnBand({ S, index, cell, onSelectCell, onEdit, onEditCell, onAddCel
   const canAdd = perColHeight && cells.length < ROWMAX;
   const canRemove = perColHeight && ki >= 0 && cells.length > 1;
   return (
-    <FackTabs
-      count={cells.length}
-      index={ki}
-      bottomUp
-      onAdd={canAdd ? () => onAddCell(index) : undefined}
-      onSelect={onSelectCell}
-    >
-      <FackPanel
-        cells={edited}
-        heights={editedHeights}
-        ownHeight={perColHeight}
-        onSet={(patch) => onEditCell(index, ki, patch)}
-        onRemove={canRemove ? () => onRemoveCell(index, ki) : undefined}
-        removeLabel={`Ta bort fack ${stackNo(ki, cells.length)}`}
-      />
-    </FackTabs>
+    <>
+      <FackTabs
+        count={cells.length}
+        index={ki}
+        bottomUp
+        onAdd={canAdd ? () => onAddCell(index) : undefined}
+        onSelect={onSelectCell}
+      >
+        <FackPanel
+          cells={edited}
+          heights={editedHeights}
+          ownHeight={perColHeight}
+          onSet={(patch) => onEditCell(index, ki, patch)}
+          onRemove={canRemove ? () => onRemoveCell(index, ki) : undefined}
+          removeLabel={`Ta bort fack ${stackNo(ki, cells.length)}`}
+        />
+      </FackTabs>
+
+      <RemoveBand label="Ta bort kolumn" onClick={onRemove} />
+    </>
   );
 }
 
