@@ -2,7 +2,7 @@
 
 import { useRef, useState, useLayoutEffect, useEffect } from "react";
 import Image from "next/image";
-import { Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Trash2, RotateCcw, Sofa, Pencil, Truck, MoreHorizontal, Undo2, History } from "lucide-react";
+import { Plus, Minus, Check, ArrowLeft, ChevronLeft, ChevronRight, X, Ruler, Trash2, Sofa, Pencil, Truck, MoreHorizontal, Undo2, Redo2, History } from "lucide-react";
 import { Heading, Text } from "./Type";
 import Tillval from "./TillvalCompact";
 import ProductInfo from "./ProductInfo";
@@ -11,7 +11,7 @@ import {
   COLORS, LEGS, HANDLES, STYLES, FRONT_LABEL, CATEGORIES,
   U, STEP, COLMAX, ROWMAX, HEIGHT_STEPS, type State, type Row, type Amount, type Front, type WoodFront, type ColDef, type CellType,
   newRow, r, cellObj, applyStyle, applyColStyle, rowCells, gridCells, fillColumn, colCells, allCells, colHeight, colCellHeights, colCm, cellsToCm, realW, maxShelves, drawersAllowed, fitAmount, hasFronts, hasWoodFronts, usesGlass, setWoodFront,
-  fitCells, normalizeCells, setRowCell, setRowCells, setColCell, setColCells, addColCell, removeColCell, colDefsFor,
+  fitCells, normalizeCells, setRowCell, setRowCells, setColCell, setColCells, addColCell, removeColCell,
   heightStepToLayout, layoutToHeightStep, furnitureHeightCm, stackNo, CELL_LABEL, type Cell,
 } from "@/lib/config";
 import { useConfigHistory, type HistoryEntry } from "@/lib/history";
@@ -38,7 +38,7 @@ const hcol = (bg: string) => (lum(bg) > 0.62 ? "rgba(0,0,0,.45)" : "rgba(255,255
 export default function Configurator({ initialState = initial, onBack }: { initialState?: State; onBack?: () => void }) {
   // State med historik: setS beter sig som en vanlig useState-sättare, men varje ändring
   // som syns på möbeln blir ett steg i ändringsloggen (se lib/history.ts).
-  const { S, setS, entries: changes, cursor, canUndo, undo, jumpTo } = useConfigHistory(initialState);
+  const { S, setS, entries: changes, cursor, canUndo, canRedo, undo, redo, jumpTo } = useConfigHistory(initialState);
   const [logOpen, setLogOpen] = useState(false);
   // active = index på bandet som redigeras i panelen (nivå 2); null = globala val (nivå 1).
   const [active, setActive] = useState<number | null>(null);
@@ -280,32 +280,6 @@ export default function Configurator({ initialState = initial, onBack }: { initi
     setActiveCell((c) => Math.max(0, c > ki ? c - 1 : c));
   };
 
-  // Återställ ett band till stilens utgångsläge. Så fort man rör ett enskilt fack
-  // materialiseras bandets fack och bandet LÅSES mot stilen (locked) – annars skulle nästa
-  // stilberäkning skriva över det man just valt. Det gör också att stilen aldrig kommer
-  // tillbaka av sig själv, och det här är vägen tillbaka: släpp låset, kasta per-fack-listan
-  // (och kolumnens egna fackantal) och låt stilen generera bandet på nytt.
-  const resetRow = (i: number) => {
-    setS((s) => {
-      const rows = s.rows.map((row, idx) => (idx === i ? { ...row, cells: undefined, locked: false } : row));
-      return { ...s, rows: s.style ? applyStyle(s.style, s.cols, rows) : rows };
-    });
-    setActiveCell(-1);
-  };
-  // Kolumnen går tillbaka till kategorins utgångsläge, inte till "inget". Skillnaden syns på
-  // TV-bänken: dess låga mitt ÄR en egen fackhöjd per kolumn, satt av kategorin. Att bara
-  // kasta höjden hade rätat ut silhuetten och gjort möbeln till något annat än en TV-bänk.
-  const resetCol = (ci: number) => {
-    setS((s) => {
-      const preset = colDefsFor(s.category ?? "", s.cols, s.rows.length);
-      const defs = (s.colDefs ?? Array.from({ length: s.cols }, emptyCol)).map((d, idx) =>
-        idx === ci ? { ...(preset[idx] ?? emptyCol()) } : d,
-      );
-      return { ...s, colDefs: s.style ? applyColStyle(s.style, s.cols, defs) : defs };
-    });
-    setActiveCell(-1);
-  };
-
   // Öppna nivå 2 för ett band. Redigeringen sker nu i panelen (ingen flytande popover).
   // Den hopfällda verktygsmenyn (mobil) stängs samtidigt – den göms i nivå 2 och ska inte
   // stå kvar öppen när man kommer tillbaka till helheten.
@@ -473,8 +447,6 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       onEditCol={editCol}
       onAddCell={addCell}
       onRemoveCell={removeCell}
-      onResetRow={resetRow}
-      onResetCol={resetCol}
       onBack={backToLevel1}
     />
   );
@@ -538,12 +510,11 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             </span>
             <Text variant="body" className="font-semibold">Tillbaka</Text>
           </button>
-          {/* desktop: ångra, ändringsloggen och vy-verktygen inline i toppen. mobil: ångra
-              sitter i bildens nedre högra hörn och resten i mer-menyn nere till vänster. */}
+          {/* desktop: ångra/gör om, ändringsloggen och vy-verktygen inline i toppen. mobil:
+              ångra/gör om sitter i bildens nedre högra hörn och resten i mer-menyn nere till
+              vänster. */}
           <div className="hidden items-center gap-2 lg:flex">
-            <ToolButton label="Ångra" disabled={!canUndo} onClick={undo}>
-              <Undo2 size={18} />
-            </ToolButton>
+            <UndoRedo canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
             <div className="relative">
               <ToolButton label="Ändringar" active={logOpen} onClick={() => setLogOpen((v) => !v)}>
                 <History size={18} />
@@ -674,14 +645,12 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           )}
         </div>
 
-        {/* mobil: ångra i bildens nedre HÖGRA hörn, mitt emot verktygsmenyn. Till skillnad
-            från vy-verktygen står den kvar under bandredigering – det är just då man vill
-            kunna ta tillbaka ett steg. Arket underifrån täcker de nedersta 24 px av
-            sektionen, så knappen lyfts ovanför arkets kant i stället för att gömmas bakom. */}
+        {/* mobil: ångra/gör om i bildens nedre HÖGRA hörn, mitt emot verktygsmenyn. Till
+            skillnad från vy-verktygen står de kvar under bandredigering – det är just då man
+            vill kunna ta tillbaka ett steg. Arket underifrån täcker de nedersta 24 px av
+            sektionen, så pillret lyfts ovanför arkets kant i stället för att gömmas bakom. */}
         <div className={`absolute right-4 z-20 lg:hidden ${active !== null ? "bottom-12" : "bottom-4"}`}>
-          <ToolButton label="Ångra" disabled={!canUndo} onClick={undo}>
-            <Undo2 size={18} />
-          </ToolButton>
+          <UndoRedo canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
         </div>
       </section>
 
@@ -1584,6 +1553,29 @@ export function Range({ label, value, max, pill, onSet }: { label: string; value
   );
 }
 
+// Ångra och gör om som ETT piller med en hårfin skiljelinje, inte två fristående knappar.
+// De två är samma handling i två riktningar och används i följd – sitter de ihop blir det en
+// plats att gå fram och tillbaka i historiken på, och verktygsraden får en grupp mindre att
+// läsa. Höjden och ytan är ToolButtons, så pillret linjerar med de runda knapparna bredvid.
+function UndoRedo({ canUndo, canRedo, onUndo, onRedo }: {
+  canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void;
+}) {
+  const half = "flex h-11 w-11 items-center justify-center text-foreground transition-colors duration-fast disabled:pointer-events-none disabled:opacity-40 hover:bg-foreground/5";
+  return (
+    <div className="flex items-center overflow-hidden rounded-full border border-border bg-card">
+      <button aria-label="Ångra" title="Ångra" disabled={!canUndo} onClick={onUndo} className={half}>
+        <Undo2 size={18} />
+      </button>
+      {/* Linjen är en egen 1px-remsa mellan halvorna – en kant på knappen hade räknats in i
+          dess bredd och gjort halvorna olika stora. */}
+      <span aria-hidden className="h-6 w-px shrink-0 bg-border" />
+      <button aria-label="Gör om" title="Gör om" disabled={!canRedo} onClick={onRedo} className={half}>
+        <Redo2 size={18} />
+      </button>
+    </div>
+  );
+}
+
 function ToolButton({ label, active = false, disabled = false, onClick, children }: {
   label: string; active?: boolean; disabled?: boolean; onClick?: () => void; children: React.ReactNode;
 }) {
@@ -1941,6 +1933,17 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
   // Kameran (nivå 2): zoomar in på det band som redigeras i stället för att bara ringa in
   // det. Se `Cam`/`viaCam` ovan.
   const [cam, setCam] = useState<Cam>(NO_CAM);
+  // Ramens mitt (räknad från golvpunkten) när kameran senast ställdes om. Ändrar ramen HÖJD
+  // efter det – mobilarket kramar sitt innehåll, så varje flikbyte i nivå 2 gör arket högre
+  // eller lägre och bilden ovanför lika mycket kortare eller längre – så flyttas hyllan med
+  // samma delta i stället för att kameran räknas om.
+  const camFrame = useRef({ w: 0, y: 0 });
+  // Den förskjutningen. Ligger i CSS-egenskapen `translate`, inte i `transform`, och ÄRVER
+  // därför ingen transition: ramen ändrar höjd bildruta för bildruta under sin egen
+  // 350 ms-animation, och hyllan ska följa den exakt. Ställdes kameran om i stället skulle
+  // varje bildruta starta en ny 350 ms-glidning mot ett mål som redan hunnit flytta sig –
+  // hyllan halkar efter arket och kryper i mål långt efter det. Det är den laggen.
+  const [trackY, setTrackY] = useState(0);
   // ett element per band (rad eller kolumn) – kameran mäter det fokuserade bandet härifrån
   const bandRefs = useRef<(HTMLDivElement | null)[]>([]);
   // ett element per fack i det band som redigeras (facklagret nedan) – kameran mäter det
@@ -2011,16 +2014,20 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
   reportRef.current = () => {
     const g = geomRef.current();
     if (!g) return;
-    const rect = viaCam(g.base, g.origin, cam);
+    // Kameran plus ramspårningen – scenen ska ligga på hyllan, och hyllan är förskjuten.
+    const c = trackY ? { ...cam, y: cam.y + trackY } : cam;
+    const rect = viaCam(g.base, g.origin, c);
     const b = active !== null ? bandRect(g.base, active) : null;
-    const band = b && viaCam(b, g.origin, cam);
+    const band = b && viaCam(b, g.origin, c);
     const p = reported.current;
-    if (near(p.rect, rect) && near(p.band, band) && p.z === cam.z) return;
-    reported.current = { rect, band, z: cam.z };
+    if (near(p.rect, rect) && near(p.band, band) && p.z === c.z) return;
+    reported.current = { rect, band, z: c.z };
     const t = lastTf.current;
+    // Spårningen räknas INTE som en glidning: den är hyllan som följer ramen bildruta för
+    // bildruta, och scenen ska följa med i samma takt i stället för att easa efter.
     const glide = animate && (t.scale !== scale || t.lift !== lift || t.cam !== cam);
     lastTf.current = { scale, lift, cam };
-    onMeasure({ ...rect, z: cam.z, band, glide });
+    onMeasure({ ...rect, z: c.z, band, glide });
   };
   // Ställ kameran mot det fokuserade bandet: zooma så bandet fyller FOCUS_FILL av ramen och
   // lägg dess mitt i ramens mitt. Är ett enskilt fack valt förskjuts målet en bit mot facket
@@ -2029,11 +2036,16 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
   focusRef.current = () => {
     if (active === null) {
       setCam((c) => (c === NO_CAM ? c : NO_CAM));
+      camFrame.current = { w: 0, y: 0 };
+      setTrackY(0);
       return;
     }
     const g = geomRef.current();
     const b = g && bandRect(g.base, active);
     if (!g || !b || b.w <= 0 || b.h <= 0) return;
+    // Kameran gäller ramen som den ser ut NU; spårningen nedan tar hand om att den ändrar höjd.
+    camFrame.current = { w: g.frame.w, y: g.frame.y + g.frame.h / 2 - g.origin.y };
+    setTrackY(0);
     const fit = (r: Rect) => Math.max(1, Math.min(FOCUS_MAX, (g.frame.w * FOCUS_FILL) / r.w, (g.frame.h * FOCUS_FILL) / r.h));
     let z = fit(b), cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     // Väljer man ETT fack kryper kameran en bit vidare mot det – tillräckligt för att man ska
@@ -2052,6 +2064,22 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
       y: g.frame.y + g.frame.h / 2 - g.origin.y - z * (cy - g.origin.y),
     };
     setCam((c) => (Math.abs(c.z - next.z) < 0.002 && Math.abs(c.x - next.x) < 0.5 && Math.abs(c.y - next.y) < 0.5 ? c : next));
+  };
+  // Ramen ändrar höjd medan man redigerar (arket kramar sitt innehåll): behåll kameran och
+  // flytta hyllan med halva höjdändringen – bandet står kvar i ramens mitt. Det är exakt vad
+  // en omräkning hade gett, eftersom kamerans enda ramberoende är just ramens mitt (och
+  // inzoomningen, som ramens BREDD sätter i de flesta bygg).
+  //
+  // Ändras bredden är det ingen arkomstorlek utan en riktig omritning av vyn – fönstret
+  // ändrar storlek, telefonen vänds – och då ska kameran räknas om helt: bandet kan behöva en
+  // annan inzoomning för att rymmas.
+  const trackRef = useRef<() => void>(() => {});
+  trackRef.current = () => {
+    const g = geomRef.current();
+    if (!g) return;
+    if (Math.abs(g.frame.w - camFrame.current.w) > 0.5) { focusRef.current(); return; }
+    const d = g.frame.y + g.frame.h / 2 - g.origin.y - camFrame.current.y;
+    setTrackY((v) => (Math.abs(v - d) < 0.5 ? v : d));
   };
   // Stabil mätfunktion (senaste closure) så ResizeObservern kan sättas upp en gång.
   const measureRef = useRef<() => void>(() => {});
@@ -2102,14 +2130,14 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
     const parent = shelfRef.current?.parentElement;
     if (!parent) return;
     measureRef.current();
-    // Medan man redigerar ett band (nivå 2) är ramen fryst – hoppa över refit, ställ bara
-    // om kameran mot bandet i den nya ramen. Annars zoomar hyllan till när vyn byter layout
+    // Medan man redigerar ett band (nivå 2) är ramen fryst – hoppa över refit, låt bara hyllan
+    // följa den nya ramen (trackRef ovan). Annars zoomar hyllan till när vyn byter layout
     // (mobil: section blir `fixed`/100vw och scrollen låses → containerns bredd ändras → ny
     // skala), vilket ser ryckigt ut.
     // Observera både ramen (fönsterresize) och hyllan (dess layoutmått ändras när rader/
     // kolumner tillkommer). ResizeObserver rapporterar content-box och påverkas därför
     // inte av transformen – ingen risk att en pågående omskalning triggar en loop.
-    const ro = new ResizeObserver(() => { editingRef.current ? focusRef.current() : measureRef.current(); });
+    const ro = new ResizeObserver(() => { editingRef.current ? trackRef.current() : measureRef.current(); });
     ro.observe(parent);
     if (shelfRef.current) ro.observe(shelfRef.current);
     return () => ro.disconnect();
@@ -2133,7 +2161,7 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
   // Ny scale/lift/kamera committad → rapportera det nya MÅLET direkt (se reportRef ovan).
   // Scenen får samma tajming som hyllans transform-transition och glider därför i takt med
   // den, istället för att starta när hyllan redan är framme.
-  useLayoutEffect(() => { reportRef.current(); }, [scale, lift, cam]);
+  useLayoutEffect(() => { reportRef.current(); }, [scale, lift, cam, trackY]);
 
   const grid = gridCells(S);
   // Per-kolumn-höjd bara för TV-möbler (ojämn topp). Då ritas varje kolumn som en egen
@@ -2194,8 +2222,12 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
     </div>
   );
 
+  // translate nedan är en EGEN CSS-egenskap, inte en del av `transform`, och står utanför
+  // transitionen: kameran (transform) glider mjukt till sitt nya mål medan ramspårningen
+  // (translate) följer arkets omstorlek bildruta för bildruta. Ordningen spelar ingen roll –
+  // translate läggs på utanför transformen och är en ren förskjutning.
   return (
-    <div ref={shelfRef} className={`relative flex flex-col gap-1.5 p-1.5 ${animate ? "transition-[transform,background-color] duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z}) translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / (scale * cam.z) }}>
+    <div ref={shelfRef} className={`relative flex flex-col gap-1.5 p-1.5 ${animate ? "transition-[transform,background-color] duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, translate: trackY ? `0 ${trackY}px` : undefined, transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z}) translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / (scale * cam.z) }}>
       {perCol ? (
         // TV-möbel: kolumner med egen höjd, golv-justerade. Varje kolumn är en egen stomme.
         <div className="flex items-end gap-1.5">
@@ -2565,7 +2597,7 @@ function FackTabs({ count, index, bottomUp = false, onAdd, onSelect, children }:
 // valet – hyllplan i ett öppet fack, frontstil på en lucka/låda. `cells` är de fack fliken
 // styr (ett, eller alla på "Alla"-fliken) och `heights` deras höjd i cm. Vad facken tål
 // avgör vilka val som finns: en låda saknas i höga fack, hyllplan i låga.
-function FackPanel({ cells, heights, ownHeight = false, onSet, onRemove, removeLabel, onReset }: {
+function FackPanel({ cells, heights, ownHeight = false, onSet, onRemove, removeLabel }: {
   cells: Cell[]; heights: number[];
   // ownHeight: facket bär sin egen höjd (kolumner med egna stommar – TV-möbler). I radläget
   // sitter höjden på raden och styrs över flikarna i stället.
@@ -2573,9 +2605,6 @@ function FackPanel({ cells, heights, ownHeight = false, onSet, onRemove, removeL
   // onRemove: sätts bara när EN flik är vald och bandet äger sitt fackantal. Den tar bort
   // facket – inte bandet; bandet tas bort på bandnivå, utanför det här kortet.
   onRemove?: () => void; removeLabel?: string;
-  // onReset: sätts bara när användaren faktiskt har ändrat något i bandet. Den ångrar hela
-  // bandets ändringar, inte det valda fackets – därav den bredare formuleringen.
-  onReset?: () => void;
   onSet: (patch: Partial<Cell>) => void;
 }) {
   const dOk = heights.every(drawersAllowed);
@@ -2630,30 +2659,20 @@ function FackPanel({ cells, heights, ownHeight = false, onSet, onRemove, removeL
         </FackRow>
       )}
 
-      {/* Fot: ångra till vänster, borttagning till höger. Båda är tysta textknappar – de ska
-          finnas när man behöver dem utan att konkurrera med valen ovanför. */}
-      {(onReset || onRemove) && (
-        <div className="-mx-4 -mb-4 mt-1 flex items-center justify-between gap-2 px-4 py-2">
-          {onReset ? (
-            <button
-              type="button"
-              onClick={onReset}
-              className="-mx-2 flex h-9 items-center gap-2 rounded-[4px] px-2 text-sm font-semibold text-muted-foreground transition-colors duration-fast hover:bg-secondary hover:text-foreground"
-            >
-              <RotateCcw size={14} /> Ångra ändringar
-            </button>
-          ) : (
-            <span />
-          )}
-          {onRemove && (
-            <button
-              type="button"
-              onClick={onRemove}
-              className="-mx-2 flex h-9 items-center gap-2 rounded-[4px] px-2 text-sm font-semibold text-destructive transition-colors duration-fast hover:bg-destructive hover:text-destructive-foreground"
-            >
-              <Trash2 size={14} /> {removeLabel ?? "Ta bort fack"}
-            </button>
-          )}
+      {/* Fot: borttagning till höger. En tyst textknapp – den ska finnas när man behöver den
+          utan att konkurrera med valen ovanför. Här låg också "Ångra ändringar", som släppte
+          bandets lås mot stilen. Den är borta: ångra/gör om i bilden tar tillbaka precis de
+          steg man gjorde, och det är en rakare väg tillbaka än en knapp som kastar allt man
+          valt i bandet på en gång. */}
+      {onRemove && (
+        <div className="-mx-4 -mb-4 mt-1 flex items-center justify-end gap-2 px-4 py-2">
+          <button
+            type="button"
+            onClick={onRemove}
+            className="-mx-2 flex h-9 items-center gap-2 rounded-[4px] px-2 text-sm font-semibold text-destructive transition-colors duration-fast hover:bg-destructive hover:text-destructive-foreground"
+          >
+            <Trash2 size={14} /> {removeLabel ?? "Ta bort fack"}
+          </button>
         </div>
       )}
     </>
@@ -2662,7 +2681,7 @@ function FackPanel({ cells, heights, ownHeight = false, onSet, onRemove, removeL
 
 // BandPanel byter ut hela panelinnehållet (nivå 2). Redigerar en rad (rad-axeln) eller
 // en kolumn (kolumnläge). All villkorslogik lånas från lib/config.ts – inget skrivs om här.
-function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, onEditRow, onEditRowCell, onEditColCell, onEditCol, onAddCell, onRemoveCell, onResetRow, onResetCol, onBack }: {
+function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, onEditRow, onEditRowCell, onEditColCell, onEditCol, onAddCell, onRemoveCell, onBack }: {
   S: State; index: number;
   // cell: vald fackflik i bandet (klampas mot antalet fack – bandet kan ha krympt)
   cell: number;
@@ -2678,9 +2697,6 @@ function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, on
   // Fackantal per kolumn – bara TV-möbler (se ColumnBand).
   onAddCell: (ci: number) => void;
   onRemoveCell: (ci: number, ki: number) => void;
-  // Släpper bandets lås mot stilen och kastar per-fack-redigeringen.
-  onResetRow: (i: number) => void;
-  onResetCol: (ci: number) => void;
   onBack: () => void;
 }) {
   const isCol = S.axis === "kolumn";
@@ -2699,9 +2715,9 @@ function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, on
       <BandHeader index={index} count={count} isCol={isCol} overlay={overlay} onSelect={onSelect} onBack={onBack} />
 
       {isCol ? (
-        <ColumnBand S={S} index={index} cell={cell} onSelectCell={onSelectCell} onEdit={onEditCol} onEditCell={onEditColCell} onAddCell={onAddCell} onRemoveCell={onRemoveCell} onReset={() => onResetCol(index)} />
+        <ColumnBand S={S} index={index} cell={cell} onSelectCell={onSelectCell} onEdit={onEditCol} onEditCell={onEditColCell} onAddCell={onAddCell} onRemoveCell={onRemoveCell} />
       ) : (
-        <RowBand row={row} index={index} cols={S.cols} cell={cell} onSelectCell={onSelectCell} onEdit={onEditRow} onEditCell={onEditRowCell} onReset={() => onResetRow(index)} />
+        <RowBand row={row} index={index} cols={S.cols} cell={cell} onSelectCell={onSelectCell} onEdit={onEditRow} onEditCell={onEditRowCell} />
       )}
     </div>
   );
@@ -2709,21 +2725,17 @@ function BandPanel({ S, index, cell, overlay = false, onSelect, onSelectCell, on
 
 // Radredigering. Raden bär bara sin höjd – innehållet väljs per fack i flikarna, så en rad
 // kan blanda öppna fack, lådor och luckor i stället för att tvingas till ett gemensamt val.
-function RowBand({ row, index, cols, cell, onSelectCell, onEdit, onEditCell, onReset }: {
+function RowBand({ row, index, cols, cell, onSelectCell, onEdit, onEditCell }: {
   row: Row; index: number; cols: number; cell: number;
   onSelectCell: (i: number) => void;
   onEdit: (i: number, patch: Partial<Row>) => void;
   onEditCell: (i: number, ci: number, patch: Partial<Cell>) => void;
-  onReset: () => void;
 }) {
   const cells = rowCells(row, cols);
   // Facken kan ha blivit färre (smalare möbel) sedan fliken valdes. -1 = "Alla"-fliken, som
   // inte finns på ett band med ett enda fack – där är facket självt hela bandet.
   const ci = cells.length < 2 ? 0 : cell < 0 ? -1 : Math.min(cell, cells.length - 1);
   const edited = ci < 0 ? cells : [cells[ci]];
-  // Bandet är överskrivet först när något faktiskt är valt här – annars är återställning en
-  // knapp som inte gör något.
-  const overridden = !!(row.locked || row.cells);
 
   return (
     <>
@@ -2739,7 +2751,6 @@ function RowBand({ row, index, cols, cell, onSelectCell, onEdit, onEditCell, onR
           cells={edited}
           heights={edited.map(() => row.h)}
           onSet={(patch) => onEditCell(index, ci, patch)}
-          onReset={overridden ? onReset : undefined}
         />
       </FackTabs>
     </>
@@ -2748,14 +2759,13 @@ function RowBand({ row, index, cols, cell, onSelectCell, onEdit, onEditCell, onR
 
 // Kolumnredigering (kolumnläge). Som raden: kolumnen bär sin höjd, innehållet väljs per fack
 // uppifrån och ner i flikarna.
-function ColumnBand({ S, index, cell, onSelectCell, onEdit, onEditCell, onAddCell, onRemoveCell, onReset }: {
+function ColumnBand({ S, index, cell, onSelectCell, onEdit, onEditCell, onAddCell, onRemoveCell }: {
   S: State; index: number; cell: number;
   onSelectCell: (i: number) => void;
   onEdit: (ci: number, patch: Partial<ColDef>) => void;
   onEditCell: (ci: number, ki: number, patch: Partial<Cell>) => void;
   onAddCell: (ci: number) => void;
   onRemoveCell: (ci: number, ki: number) => void;
-  onReset: () => void;
 }) {
   const def = S.colDefs?.[index] ?? { doors: "none", drawers: "none" };
   // Egen höjd per kolumn – bara TV-möbler (ojämn topp), som default+override mot Form-höjden.
@@ -2770,10 +2780,6 @@ function ColumnBand({ S, index, cell, onSelectCell, onEdit, onEditCell, onAddCel
   // från höjden i grundvalen, och då finns varken plusflik eller ta bort-knapp.
   const canAdd = perColHeight && cells.length < ROWMAX;
   const canRemove = perColHeight && ki >= 0 && cells.length > 1;
-  // Överskriven = användaren har ändrat något här. `locked` sätts av varje sådan ändring och
-  // är därför signalen. Egen fackhöjd (`height`) är det INTE: TV-bänkens låga mitt kommer
-  // med kategorin, så den hade fått varje sådan kolumn att se redigerad ut från början.
-  const overridden = !!(def.locked || def.cells);
   return (
     <FackTabs
       count={cells.length}
@@ -2789,7 +2795,6 @@ function ColumnBand({ S, index, cell, onSelectCell, onEdit, onEditCell, onAddCel
         onSet={(patch) => onEditCell(index, ki, patch)}
         onRemove={canRemove ? () => onRemoveCell(index, ki) : undefined}
         removeLabel={`Ta bort fack ${stackNo(ki, cells.length)}`}
-        onReset={overridden ? onReset : undefined}
       />
     </FackTabs>
   );
