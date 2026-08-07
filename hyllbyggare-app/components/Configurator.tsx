@@ -556,15 +556,16 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           className="absolute inset-x-0 top-0 z-20 flex items-center justify-between p-4 lg:px-6 lg:pb-6"
           style={toolbarPadTop !== undefined ? { paddingTop: toolbarPadTop } : undefined}
         >
-          <button
+          {/* Tillbaka är en ikonknapp som alla andra – samma runda form, samma storlek. Texten
+              behövs inte: pilen säger vad den gör, och utan den blir toppen av bilden en enda
+              serie likadana knappar i stället för en etikett till vänster och knappar till
+              höger. På mobil betyder det att den ligger kvar på den sticky bilden hela vägen. */}
+          <ToolButton
+            label="Tillbaka"
             onClick={() => (onBack ? onBack() : typeof window !== "undefined" && window.history.back())}
-            className="group flex items-center gap-3"
           >
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity duration-fast group-hover:opacity-90">
-              <ArrowLeft size={14} />
-            </span>
-            <Text variant="body" className="font-semibold">Tillbaka</Text>
-          </button>
+            <ArrowLeft size={18} />
+          </ToolButton>
           {/* desktop: ångra/gör om, ändringsloggen och vy-verktygen inline i toppen. mobil:
               ångra/gör om sitter i bildens nedre högra hörn och resten i mer-menyn nere till
               vänster. */}
