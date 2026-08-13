@@ -2298,10 +2298,23 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
   // (translate) följer arkets omstorlek bildruta för bildruta. Ordningen spelar ingen roll –
   // translate läggs på utanför transformen och är en ren förskjutning.
   return (
-    <div ref={shelfRef} className={`relative flex flex-col gap-1.5 p-1.5 ${animate ? "transition-[transform,background-color] duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12, translate: trackY ? `0 ${trackY}px` : undefined, transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z}) translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / (scale * cam.z) }}>
+    <div ref={shelfRef} className={`relative flex flex-col ${animate ? "transition-transform duration-slow ease-default" : "transition-none"}`} style={{ translate: trackY ? `0 ${trackY}px` : undefined, transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z}) translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / (scale * cam.z) }}>
+      {/* Stommen. Ramfärgen målas BARA här och inte på roten – benen nedan är syskon till
+          den, inte barn i den, så det ligger ingen fullbred ramskiva bakom dem. Förut låg
+          benen inne i den målade boxen med rotens p-1.5 under sig: 6 px ramfärg UNDER
+          benen, så de nådde aldrig golvlinjen utan svävade över den. Nu sitter de flush
+          mot stommens underkant, vilket också är rotens underkant = golvpunkten. */}
+      <div className={`flex flex-col gap-1.5 p-1.5 ${animate ? "transition-colors duration-slow ease-default" : "transition-none"}`} style={{ background: perCol ? "transparent" : frame, width: perCol ? undefined : S.cols * U + 12 }}>
       {perCol ? (
         // TV-möbel: kolumner med egen höjd, golv-justerade. Varje kolumn är en egen stomme.
-        <div className="flex items-end gap-1.5">
+        //
+        // INGEN gap här, till skillnad från de andra lägena. Kolumnerna bär sin egen
+        // bakgrund (roten är transparent, för en genomgående bakgrund skulle måla ram
+        // ovanför den låga mitten). Med en gap emellan blir sömmen en genomsiktlig glipa
+        // hela höjden och sektionerna läser som separata möbler intill varandra. Utan gap
+        // möter stommarnas p-1.5 varandra och sömmen blir sammanhängande rammaterial –
+        // två intilliggande gavlar, vilket är precis vad buttade stommar är.
+        <div className="flex items-end">
           {Array.from({ length: S.cols }, (_, ci) => {
             const def = S.colDefs?.[ci] ?? { doors: "none" as Amount, drawers: "none" as Amount };
             const cells = colCells(def, colHeight(S, ci), S.front);
@@ -2369,6 +2382,7 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
           </div>
         ))
       )}
+      </div>
       {S.mount === "staende" && <Legs S={S} frame={frame} />}
     </div>
   );
@@ -2469,6 +2483,16 @@ function Handle({ type, handle, color }: { type: string; handle: string; color: 
   );
 }
 
+// Benen ritas som en fris under stommen (se Shelf: syskon till den målade boxen, inte barn
+// i den). Formen följer copyn i LEGS: ek/valnöt/svart beskrivs som "konisk fot" och är
+// därför avsmalnande, ytterbenen lätt utåtlutande. Lutningen görs med clip-path och inte
+// med rotate: underkanten förblir plan och allt håller sig inom layoutboxen, så inget ben
+// sticker ut under golvlinjen. Stål och mässing är smalare och rakt ställda – "lätt och
+// industriellt" respektive en ren metallpinne.
+//
+// Höjden är 18 px för alla varianter, samma som förut. Den ingår i den uppmätta
+// möbelhöjden som inpassningen och golvpunkten räknar på, så den lämnas i fred – det här
+// är en ren formändring.
 export function Legs({ S }: { S: State; frame: string }) {
   const lc =
     S.leg === "stal" ? "#9a9d9c" :
@@ -2476,10 +2500,37 @@ export function Legs({ S }: { S: State; frame: string }) {
     S.leg === "svart" ? "#222" :
     S.leg === "valnot" ? "#5b4636" :
     "#C9A36A"; // ek
+  const metal = S.leg === "stal" || S.leg === "massing";
+  // Ben i båda ändarna, plus ett extra per två sektioner därutöver. En 240 cm bänk ska
+  // inte se ut att vila på två pinnar – och utan mellanben läser den som att den svajar.
+  const count = 2 + Math.floor(Math.max(0, S.cols - 2) / 2);
+  // Ytterbenen lutar utåt (smalare nedtill, förskjutet mot mitten upptill), mellanbenen
+  // står symmetriskt. Metall får ingen kon alls.
+  const clipFor = (i: number) => {
+    if (metal) return undefined;
+    if (i === 0) return "polygon(34% 0, 100% 0, 72% 100%, 0 100%)";
+    if (i === count - 1) return "polygon(0 0, 66% 0, 100% 100%, 28% 100%)";
+    return "polygon(12% 0, 88% 0, 74% 100%, 26% 100%)";
+  };
   return (
     <div className="flex justify-between px-2">
-      <span className="transition-colors duration-slow" style={{ width: 5, height: 18, background: lc }} />
-      <span className="transition-colors duration-slow" style={{ width: 5, height: 18, background: lc }} />
+      {Array.from({ length: count }, (_, i) => (
+        <span
+          key={i}
+          className="transition-colors duration-slow"
+          style={{
+            width: metal ? 4 : 9,
+            height: 18,
+            // backgroundColor + backgroundImage, inte background-shorthand: shorthanden
+            // nollar bilden och ordningen mellan dem blir då en fälla.
+            backgroundColor: lc,
+            // Svag ljussättning tvärs benet ger det volym i stället för platt silhuett.
+            backgroundImage:
+              "linear-gradient(to right, rgba(0,0,0,0.22), rgba(0,0,0,0) 55%, rgba(255,255,255,0.12))",
+            clipPath: clipFor(i),
+          }}
+        />
+      ))}
     </div>
   );
 }

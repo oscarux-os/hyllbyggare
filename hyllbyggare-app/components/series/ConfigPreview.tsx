@@ -54,17 +54,25 @@ function PreviewShelf({ S }: { S: State }) {
   return (
     <div
       ref={ref}
-      className="flex flex-col gap-1.5 p-1.5"
+      className="flex flex-col"
       style={{
-        background: perCol ? "transparent" : frame,
-        width: perCol ? undefined : S.cols * U + 12,
         transform: `scale(${scale})`,
         transformOrigin: "center center",
       }}
     >
+      {/* Ramfärgen målas bara på stommen, så benen nedan står fritt i stället för mot en
+          fullbred ramskiva (samma uppdelning som i Shelf). */}
+      <div
+        className="flex flex-col gap-1.5 p-1.5"
+        style={{
+          background: perCol ? "transparent" : frame,
+          width: perCol ? undefined : S.cols * U + 12,
+        }}
+      >
       {perCol ? (
-        // TV-bänk: kolumner med egen höjd, golv-justerade.
-        <div className="flex items-end gap-1.5">
+        // TV-bänk: kolumner med egen höjd, golv-justerade. Ingen gap – stommarna möts så
+        // sömmen blir sammanhängande ram i stället för en genomsiktlig glipa (se Shelf).
+        <div className="flex items-end">
           {Array.from({ length: S.cols }, (_, ci) => {
             const def = S.colDefs?.[ci] ?? { doors: "none" as Amount, drawers: "none" as Amount };
             const types = fillColumn(def, colHeight(S, ci));
@@ -99,6 +107,7 @@ function PreviewShelf({ S }: { S: State }) {
           </div>
         ))
       )}
+      </div>
       {S.mount === "staende" && <Legs S={S} frame={frame} />}
     </div>
   );
