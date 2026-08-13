@@ -1996,6 +1996,17 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
 }) {
   const shelfRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  // px som hela möbeln (och golvlinjen med den) lyfts för att centrera bilden i en väldigt
+  // hög ram. Se measureRef: skalan sätts av MAXBYGGET, så luften ovanför en låg hylla är
+  // normalt inte slack utan utrymme kvar att bygga på. Men blir ramen så hög att bredden
+  // begränsar skalan finns det höjd kvar som inte ens ett fullt 6-radersbygge skulle nå upp
+  // i. Den ytan är död, och den är budgeten för hur mycket möbeln får centreras – så länge
+  // det finns byggutrymme kvar rör vi ingenting.
+  //
+  // Ligger i transformen och inte i containerns padding: padding skulle ändra ramens höjd,
+  // som slacken räknas ur, och det blir en återkopplingsloop med ResizeObserver. Transformen
+  // påverkar inte layoutmåtten (RO rapporterar content-box), så den är säker här.
+  const [rise, setRise] = useState(0);
   // Första passningen (mount) sätter skalan från 1 → uträknad storlek. Utan detta animeras
   // det språnget som en "zoom in-och-krymp" varje gång vyn öppnas. animate hålls false tills
   // efter första målningen så inpassningen sker direkt; därefter animeras äkta ändringar
@@ -2032,7 +2043,7 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
   // (scale/lift/kamera ändras → transform-transition) eller på att den byter layout (rad/
   // kolumn läggs till → snäpper direkt). Scenen ska glida i det första fallet och snäppa i
   // det andra.
-  const lastTf = useRef({ scale, lift, cam });
+  const lastTf = useRef({ scale, lift, rise, cam });
   // Hyllans geometri i wrap-koordinater: ramen (containerns content-box), golvpunkten
   // (= transform-origin) och hyllans rektangel FÖRE kameran.
   //
@@ -2059,7 +2070,11 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
     };
     const w = el.offsetWidth * scale, h = el.offsetHeight * scale;
     return {
-      base: { x: origin.x - w / 2, y: origin.y - lift - h, w, h },
+      // `rise` ingår här och inte bara i transformen: golvlinjen räknas ur den rapporterade
+      // rektangeln (floorY = stage.y + stage.h + lift·z), så golvet följer med möbeln uppåt.
+      // Det skiljer den från `lift`, som lyfter möbeln FRÅN golvet (väggmontering) och därför
+      // kompenseras bort i floorY.
+      base: { x: origin.x - w / 2, y: origin.y - lift - rise - h, w, h },
       origin,
       frame: { x: pr.left - wr.left + padL, y: pr.top - wr.top + padT, w: parent.clientWidth - padL - padR, h: parent.clientHeight - padT - padB },
     };
@@ -2096,8 +2111,8 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
     const t = lastTf.current;
     // Spårningen räknas INTE som en glidning: den är hyllan som följer ramen bildruta för
     // bildruta, och scenen ska följa med i samma takt i stället för att easa efter.
-    const glide = animate && (t.scale !== scale || t.lift !== lift || t.cam !== cam);
-    lastTf.current = { scale, lift, cam };
+    const glide = animate && (t.scale !== scale || t.lift !== lift || t.rise !== rise || t.cam !== cam);
+    lastTf.current = { scale, lift, rise, cam };
     onMeasure({ ...rect, z: c.z, band, glide });
   };
   // Ställ kameran mot det fokuserade bandet: zooma så bandet fyller FOCUS_FILL av ramen och
@@ -2180,7 +2195,10 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
     // storleksregistret och alla bygg kan jämföras mot varandra.
     const GAP = 6, PAD = 6, LEG = 18; // gap-1.5 / p-1.5 / benens höjd
     const refW = COLMAX * U + PAD * 2;
-    const refH = ROWMAX * U + (ROWMAX - 1) * GAP + PAD * 2 + (LEG + GAP);
+    // Benen sitter flush mot stommens underkant (se Legs) – ingen gap och ingen padding
+    // under dem. Höjden är därför stommen (PAD + rader + gap:ar + PAD) plus benen, utan
+    // det extra GAP som låg här när benen fortfarande satt inne i den målade boxen.
+    const refH = ROWMAX * U + (ROWMAX - 1) * GAP + PAD * 2 + LEG;
     const ref = Math.min(pw / refW, ph / refH);
     // Två spärrar runt referensskalan:
     //  • Math.max(1, …): i en knapp ram (mobilens 50svh, liten laptop) ryms maxbygget
@@ -2191,7 +2209,20 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
     //    ut ur ramen, oavsett skala.
     // golv på 0.05: en dold/kollapsad container ger negativa mått – utan golvet skulle
     // skalan (och --inv nedan) bli meningslös.
-    setScale(Math.max(0.05, Math.min(Math.max(1, ref), pw / el.offsetWidth, ph / el.offsetHeight)));
+    const sc = Math.max(0.05, Math.min(Math.max(1, ref), pw / el.offsetWidth, ph / el.offsetHeight));
+    setScale(sc);
+    // Död yta: den del av ramhöjden som inte ens MAXBYGGET kan nå upp i. Noll i en normal
+    // ram (där fyller maxbygget höjden) och växer bara när ramen blir ovanligt hög.
+    const dead = Math.max(0, ph - refH * sc);
+    // Vad som skulle behövas för att centrera det FAKTISKA bygget i ramen.
+    const toCenter = Math.max(0, (ph - el.offsetHeight * sc) / 2);
+    // Den döda ytan är budgeten för hur mycket vi får centrera. Finns ingen är lyftet noll
+    // och beteendet exakt som förut: luften ovanför hyllan är utrymme kvar att bygga på, och
+    // en tillagd rad växer uppåt i stället för att zooma om vyn. Finns det gott om död yta
+    // räcker budgeten hela vägen, och då hamnar även en låg byrå mitt i bild i stället för
+    // strandad i nederkanten med en tom vägg över sig. Däremellan glider det proportionerligt
+    // – ingen tröskel och inget hopp när man drar i fönstret.
+    setRise(Math.min(dead, toCenter));
     reportRef.current();
   };
   // Fönster-/containerstorlek ändras → passa alltid in på nytt. Sätts upp en gång.
@@ -2228,11 +2259,11 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
   }, [S.cols, S.rows, S.colDefs, lift, editing]);
   // Kameran ställs om när fokus byts (klick/steppern) och när bandets mått ändras medan man
   // redigerar det (t.ex. ny radhöjd) – då följer inzoomningen med bandet.
-  useLayoutEffect(() => { focusRef.current(); }, [active, activeCell, scale, lift, S.cols, S.rows, S.colDefs, S.axis, S.category]);
+  useLayoutEffect(() => { focusRef.current(); }, [active, activeCell, scale, lift, rise, S.cols, S.rows, S.colDefs, S.axis, S.category]);
   // Ny scale/lift/kamera committad → rapportera det nya MÅLET direkt (se reportRef ovan).
   // Scenen får samma tajming som hyllans transform-transition och glider därför i takt med
   // den, istället för att starta när hyllan redan är framme.
-  useLayoutEffect(() => { reportRef.current(); }, [scale, lift, cam, trackY]);
+  useLayoutEffect(() => { reportRef.current(); }, [scale, lift, rise, cam, trackY]);
 
   const grid = gridCells(S);
   // Per-kolumn-höjd bara för TV-möbler (ojämn topp). Då ritas varje kolumn som en egen
@@ -2298,7 +2329,7 @@ function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, onHover, 
   // (translate) följer arkets omstorlek bildruta för bildruta. Ordningen spelar ingen roll –
   // translate läggs på utanför transformen och är en ren förskjutning.
   return (
-    <div ref={shelfRef} className={`relative flex flex-col ${animate ? "transition-transform duration-slow ease-default" : "transition-none"}`} style={{ translate: trackY ? `0 ${trackY}px` : undefined, transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z}) translateY(${-lift}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / (scale * cam.z) }}>
+    <div ref={shelfRef} className={`relative flex flex-col ${animate ? "transition-transform duration-slow ease-default" : "transition-none"}`} style={{ translate: trackY ? `0 ${trackY}px` : undefined, transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.z}) translateY(${-(lift + rise)}px) scale(${scale})`, transformOrigin: "bottom center", ["--inv" as string]: 1 / (scale * cam.z) }}>
       {/* Stommen. Ramfärgen målas BARA här och inte på roten – benen nedan är syskon till
           den, inte barn i den, så det ligger ingen fullbred ramskiva bakom dem. Förut låg
           benen inne i den målade boxen med rotens p-1.5 under sig: 6 px ramfärg UNDER
