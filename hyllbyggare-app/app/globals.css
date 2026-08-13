@@ -122,7 +122,9 @@
   }
 }
 
-/* Dölj den globala headern när konfiguratorn är öppen (den har egen köpribba). */
+/* Dölj den globala headern när konfiguratorn är öppen (den har egen köpribba).
+   Landningen på /bygg (typväljaren) behåller headern – därför är regeln bunden till att
+   Configurator är monterad, inte till rutten. */
 body.hide-site-header #site-header {
   display: none;
 }
