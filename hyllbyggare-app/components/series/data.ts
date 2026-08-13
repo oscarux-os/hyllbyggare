@@ -83,47 +83,59 @@ const layoutC = (over: Partial<State> = {}): State => layoutState({
   ...over,
 });
 
-export const CONFIGS: Config[] = [
-  { id: "1", name: "Konfiguration 1", dims: "162x45x79 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-1.png", category: "hyllor", style: "mosaik", material: "ek", color: "#C9A36A", layout: layout1 },
-  { id: "2", name: "Konfiguration 2", dims: "165x38x83 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-2.png", category: "hyllor", style: "rytm", material: "ek", color: "#C9A36A", front: "slats", layout: layout2 },
-  { id: "3", name: "Konfiguration 3", dims: "150x42x85 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-3.png", category: "hyllor", style: "kollage", material: "laminat", color: "#5E7560", layout: layoutC() },
-  { id: "4", name: "Konfiguration 4", dims: "160x44x80 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-4.png", category: "hyllor", style: "mosaik", material: "laminat", color: "#B3A998", layout: layoutC({ color: "#B3A998" }) },
+// Kortens namn är möbeltypen + löpnummer inom typen: "Skänk 1", "Skänk 2". Numret räknas
+// fram ur listans ordning i stället för att skrivas för hand, så det inte kan glida ifrån
+// innehållet när kort läggs till, tas bort eller flyttas.
+function numreraPerTyp(configs: Omit<Config, "name">[]): Config[] {
+  const rakning = new Map<ConfigType, number>();
+  return configs.map((c) => {
+    const nummer = (rakning.get(c.type) ?? 0) + 1;
+    rakning.set(c.type, nummer);
+    return { ...c, name: `${c.type} ${nummer}` };
+  });
+}
+
+export const CONFIGS: Config[] = numreraPerTyp([
+  { id: "1", dims: "162x45x79 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-1.png", category: "hyllor", style: "mosaik", material: "ek", color: "#C9A36A", layout: layout1 },
+  { id: "2", dims: "165x38x83 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-2.png", category: "hyllor", style: "rytm", material: "ek", color: "#C9A36A", front: "slats", layout: layout2 },
+  { id: "3", dims: "150x42x85 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-3.png", category: "hyllor", style: "kollage", material: "laminat", color: "#5E7560", layout: layoutC() },
+  { id: "4", dims: "160x44x80 cm", type: "Bokhylla", priceSale: "18.546:-", priceOrig: "26.495:-", discount: "-30%", image: "/series/config-4.png", category: "hyllor", style: "mosaik", material: "laminat", color: "#B3A998", layout: layoutC({ color: "#B3A998" }) },
   // De gröna med luckor fungerar även som skåp/vitrin – så filtret har något att visa.
-  { id: "5", name: "Konfiguration 5", dims: "150x42x85 cm", type: "Skåp & Vitringskåp", priceSale: "16.796:-", priceOrig: "23.995:-", discount: "-30%", image: "/series/config-3.png", category: "vitrin", material: "laminat", color: "#5E7560", layout: layoutC({ category: "vitrin" }) },
-  { id: "6", name: "Konfiguration 6", dims: "160x44x80 cm", type: "Skåp & Vitringskåp", priceSale: "17.496:-", priceOrig: "24.995:-", discount: "-30%", image: "/series/config-4.png", category: "vitrin", material: "laminat", color: "#B3A998", layout: layoutC({ category: "vitrin", color: "#B3A998" }) },
+  { id: "5", dims: "150x42x85 cm", type: "Skåp & Vitringskåp", priceSale: "16.796:-", priceOrig: "23.995:-", discount: "-30%", image: "/series/config-3.png", category: "vitrin", material: "laminat", color: "#5E7560", layout: layoutC({ category: "vitrin" }) },
+  { id: "6", dims: "160x44x80 cm", type: "Skåp & Vitringskåp", priceSale: "17.496:-", priceOrig: "24.995:-", discount: "-30%", image: "/series/config-4.png", category: "vitrin", material: "laminat", color: "#B3A998", layout: layoutC({ category: "vitrin", color: "#B3A998" }) },
 
   // Genererade konfigurationer för produkttyper utan foto. "Välj" öppnar rätt kategori
   // i byggaren och kortet visar en renderad förhandsvisning av just detta bygge
   // (cols = bredd i sektioner, heightUnits = höjd i 40 cm-moduler).
-  { id: "7", name: "Konfiguration 1", dims: "180x45x86 cm", type: "Skänk", priceSale: "12.596:-", priceOrig: "17.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "ek", color: "#C9A36A", cols: 4, heightUnits: 2 },
-  { id: "8", name: "Konfiguration 2", dims: "200x45x86 cm", type: "Skänk", priceSale: "13.996:-", priceOrig: "19.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "laminat", color: "#5E7560", cols: 5, heightUnits: 2 },
-  { id: "9", name: "Konfiguration 1", dims: "180x42x78 cm", type: "TV-bänk", priceSale: "9.796:-", priceOrig: "13.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "ek", color: "#C9A36A", cols: 4, heightUnits: 2 },
-  { id: "10", name: "Konfiguration 2", dims: "220x42x78 cm", type: "TV-bänk", priceSale: "11.196:-", priceOrig: "15.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "laminat", color: "#3C3C3A", cols: 5, heightUnits: 2 },
-  { id: "11", name: "Konfiguration 1", dims: "120x45x86 cm", type: "Byrå", priceSale: "8.396:-", priceOrig: "11.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "ek", color: "#C9A36A", cols: 3, heightUnits: 2 },
-  { id: "12", name: "Konfiguration 2", dims: "90x45x120 cm", type: "Byrå", priceSale: "7.696:-", priceOrig: "10.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "ek", color: "#6B4F3A", cols: 2, heightUnits: 3 },
+  { id: "7", dims: "180x45x86 cm", type: "Skänk", priceSale: "12.596:-", priceOrig: "17.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "ek", color: "#C9A36A", cols: 4, heightUnits: 2 },
+  { id: "8", dims: "200x45x86 cm", type: "Skänk", priceSale: "13.996:-", priceOrig: "19.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "laminat", color: "#5E7560", cols: 5, heightUnits: 2 },
+  { id: "9", dims: "180x42x78 cm", type: "TV-bänk", priceSale: "9.796:-", priceOrig: "13.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "ek", color: "#C9A36A", cols: 4, heightUnits: 2 },
+  { id: "10", dims: "220x42x78 cm", type: "TV-bänk", priceSale: "11.196:-", priceOrig: "15.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "laminat", color: "#3C3C3A", cols: 5, heightUnits: 2 },
+  { id: "11", dims: "120x45x86 cm", type: "Byrå", priceSale: "8.396:-", priceOrig: "11.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "ek", color: "#C9A36A", cols: 3, heightUnits: 2 },
+  { id: "12", dims: "90x45x120 cm", type: "Byrå", priceSale: "7.696:-", priceOrig: "10.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "ek", color: "#6B4F3A", cols: 2, heightUnits: 3 },
 
   // Fler genererade konfigurationer så varje kategori fyller karusellen.
   // Bokhylla
-  { id: "13", name: "Konfiguration 5", dims: "140x40x120 cm", type: "Bokhylla", priceSale: "19.596:-", priceOrig: "27.995:-", discount: "-30%", placeholder: true, category: "hyllor", style: "rytm", material: "ek", color: "#C9A36A", cols: 3, heightUnits: 3 },
-  { id: "14", name: "Konfiguration 6", dims: "200x45x90 cm", type: "Bokhylla", priceSale: "22.396:-", priceOrig: "31.995:-", discount: "-30%", placeholder: true, category: "hyllor", style: "kollage", material: "laminat", color: "#445362", cols: 5, heightUnits: 2 },
-  { id: "15", name: "Konfiguration 7", dims: "120x38x160 cm", type: "Bokhylla", priceSale: "20.996:-", priceOrig: "29.995:-", discount: "-30%", placeholder: true, category: "hyllor", style: "mosaik", material: "ek", color: "#6B4F3A", cols: 3, heightUnits: 4 },
+  { id: "13", dims: "140x40x120 cm", type: "Bokhylla", priceSale: "19.596:-", priceOrig: "27.995:-", discount: "-30%", placeholder: true, category: "hyllor", style: "rytm", material: "ek", color: "#C9A36A", cols: 3, heightUnits: 3 },
+  { id: "14", dims: "200x45x90 cm", type: "Bokhylla", priceSale: "22.396:-", priceOrig: "31.995:-", discount: "-30%", placeholder: true, category: "hyllor", style: "kollage", material: "laminat", color: "#445362", cols: 5, heightUnits: 2 },
+  { id: "15", dims: "120x38x160 cm", type: "Bokhylla", priceSale: "20.996:-", priceOrig: "29.995:-", discount: "-30%", placeholder: true, category: "hyllor", style: "mosaik", material: "ek", color: "#6B4F3A", cols: 3, heightUnits: 4 },
   // Skänk
-  { id: "16", name: "Konfiguration 3", dims: "160x45x86 cm", type: "Skänk", priceSale: "11.896:-", priceOrig: "16.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "ek", color: "#6B4F3A", cols: 4, heightUnits: 2 },
-  { id: "17", name: "Konfiguration 4", dims: "220x45x86 cm", type: "Skänk", priceSale: "15.396:-", priceOrig: "21.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "laminat", color: "#445362", front: "slats", cols: 5, heightUnits: 2 },
-  { id: "18", name: "Konfiguration 5", dims: "120x38x86 cm", type: "Skänk", priceSale: "10.496:-", priceOrig: "14.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "ek", color: "#C9A36A", cols: 3, heightUnits: 2 },
+  { id: "16", dims: "160x45x86 cm", type: "Skänk", priceSale: "11.896:-", priceOrig: "16.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "ek", color: "#6B4F3A", cols: 4, heightUnits: 2 },
+  { id: "17", dims: "220x45x86 cm", type: "Skänk", priceSale: "15.396:-", priceOrig: "21.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "laminat", color: "#445362", front: "slats", cols: 5, heightUnits: 2 },
+  { id: "18", dims: "120x38x86 cm", type: "Skänk", priceSale: "10.496:-", priceOrig: "14.995:-", discount: "-30%", placeholder: true, category: "skankar", material: "ek", color: "#C9A36A", cols: 3, heightUnits: 2 },
   // TV-bänk
-  { id: "19", name: "Konfiguration 3", dims: "160x42x78 cm", type: "TV-bänk", priceSale: "8.396:-", priceOrig: "11.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "ek", color: "#C9A36A", cols: 3, heightUnits: 2 },
-  { id: "20", name: "Konfiguration 4", dims: "200x42x78 cm", type: "TV-bänk", priceSale: "10.496:-", priceOrig: "14.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "laminat", color: "#5E7560", cols: 5, heightUnits: 2 },
-  { id: "21", name: "Konfiguration 5", dims: "240x42x78 cm", type: "TV-bänk", priceSale: "12.596:-", priceOrig: "17.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "ek", color: "#6B4F3A", cols: 6, heightUnits: 2 },
+  { id: "19", dims: "160x42x78 cm", type: "TV-bänk", priceSale: "8.396:-", priceOrig: "11.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "ek", color: "#C9A36A", cols: 3, heightUnits: 2 },
+  { id: "20", dims: "200x42x78 cm", type: "TV-bänk", priceSale: "10.496:-", priceOrig: "14.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "laminat", color: "#5E7560", cols: 5, heightUnits: 2 },
+  { id: "21", dims: "240x42x78 cm", type: "TV-bänk", priceSale: "12.596:-", priceOrig: "17.995:-", discount: "-30%", placeholder: true, category: "tvbank", material: "ek", color: "#6B4F3A", cols: 6, heightUnits: 2 },
   // Byrå
-  { id: "22", name: "Konfiguration 3", dims: "80x45x120 cm", type: "Byrå", priceSale: "8.396:-", priceOrig: "11.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "laminat", color: "#445362", cols: 2, heightUnits: 3 },
-  { id: "23", name: "Konfiguration 4", dims: "120x45x86 cm", type: "Byrå", priceSale: "9.096:-", priceOrig: "12.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "ek", color: "#6B4F3A", front: "slats", cols: 3, heightUnits: 2 },
-  { id: "24", name: "Konfiguration 5", dims: "160x45x120 cm", type: "Byrå", priceSale: "7.696:-", priceOrig: "10.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "ek", color: "#C9A36A", cols: 4, heightUnits: 3 },
+  { id: "22", dims: "80x45x120 cm", type: "Byrå", priceSale: "8.396:-", priceOrig: "11.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "laminat", color: "#445362", cols: 2, heightUnits: 3 },
+  { id: "23", dims: "120x45x86 cm", type: "Byrå", priceSale: "9.096:-", priceOrig: "12.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "ek", color: "#6B4F3A", front: "slats", cols: 3, heightUnits: 2 },
+  { id: "24", dims: "160x45x120 cm", type: "Byrå", priceSale: "7.696:-", priceOrig: "10.995:-", discount: "-30%", placeholder: true, category: "byraar", material: "ek", color: "#C9A36A", cols: 4, heightUnits: 3 },
   // Skåp & Vitringskåp
-  { id: "25", name: "Konfiguration 3", dims: "120x40x86 cm", type: "Skåp & Vitringskåp", priceSale: "13.996:-", priceOrig: "19.995:-", discount: "-30%", placeholder: true, category: "vitrin", material: "ek", color: "#C9A36A", front: "glass", cols: 3, heightUnits: 2 },
-  { id: "26", name: "Konfiguration 4", dims: "160x42x120 cm", type: "Skåp & Vitringskåp", priceSale: "18.196:-", priceOrig: "25.995:-", discount: "-30%", placeholder: true, category: "vitrin", material: "laminat", color: "#5E7560", front: "glass", cols: 4, heightUnits: 3 },
-  { id: "27", name: "Konfiguration 5", dims: "90x40x160 cm", type: "Skåp & Vitringskåp", priceSale: "16.796:-", priceOrig: "23.995:-", discount: "-30%", placeholder: true, category: "vitrin", material: "ek", color: "#6B4F3A", front: "glass", cols: 2, heightUnits: 4 },
-];
+  { id: "25", dims: "120x40x86 cm", type: "Skåp & Vitringskåp", priceSale: "13.996:-", priceOrig: "19.995:-", discount: "-30%", placeholder: true, category: "vitrin", material: "ek", color: "#C9A36A", front: "glass", cols: 3, heightUnits: 2 },
+  { id: "26", dims: "160x42x120 cm", type: "Skåp & Vitringskåp", priceSale: "18.196:-", priceOrig: "25.995:-", discount: "-30%", placeholder: true, category: "vitrin", material: "laminat", color: "#5E7560", front: "glass", cols: 4, heightUnits: 3 },
+  { id: "27", dims: "90x40x160 cm", type: "Skåp & Vitringskåp", priceSale: "16.796:-", priceOrig: "23.995:-", discount: "-30%", placeholder: true, category: "vitrin", material: "ek", color: "#6B4F3A", front: "glass", cols: 2, heightUnits: 4 },
+]);
 
 /* ---------- Färgprover (Färg-raden) ---------- */
 // Illustrativa prover från Figma – hex tillåtet här (jfr. träfärgerna i SeriesPage/Configurator).

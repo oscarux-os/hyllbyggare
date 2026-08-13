@@ -371,7 +371,15 @@ export default function Configurator({ initialState = initial, onBack }: { initi
 
   // Konfiguratorn har egen köpribba – dölj den globala headern medan den är öppen,
   // och börja alltid längst upp (nollställ scrollpositionen) när man kliver in.
-  useEffect(() => {
+  //
+  // useLayoutEffect, inte useEffect: en vanlig effekt körs EFTER första paint, så headern
+  // hann renderas, ta ~90 px och trycka ner bilden ett ögonblick innan den försvann –
+  // layouten hoppade varje gång man klev in i byggaren, värst på mobil där viewporten är
+  // låg. useLayoutEffect körs före paint, så det syns aldrig.
+  //
+  // Villkoret sitter kvar på monteringen och inte på rutten: landningen på /bygg
+  // (typväljaren) ska behålla headern, det är bara konfiguratorn som ersätter den.
+  useLayoutEffect(() => {
     document.body.classList.add("hide-site-header");
     window.scrollTo(0, 0);
     return () => document.body.classList.remove("hide-site-header");
@@ -526,9 +534,8 @@ export default function Configurator({ initialState = initial, onBack }: { initi
       {/* ---- förhandsvisning (8 av 12 kolumner) ---- */}
       {/* mobil: 40svh sticky bild överst, konfiguration (60%) scrollar under. desktop: 8/12-kolumn, full höjd. */}
       {/* Mobil under bandredigering: bilden pinnas till viewportens topp (fixed) så den
-          tilar exakt med overlayns top-[50svh] – annars trycker det globala sidhuvudet
-          (ej sticky) ner bilden och overlayn glider upp över dess nederkant. Desktop och
-          grundvyn behåller sticky-beteendet. */}
+          tilar exakt med overlayns top-[50svh] – annars glider overlayn upp över bildens
+          nederkant. Desktop och grundvyn behåller sticky-beteendet. */}
       <section
         // --sheet-h: arkets innehållshöjd (mobil, nivå 2). Taket klampas här i CSS i stället
         // för i mätningen, så svh-enheten får betyda samma sak för arket och för bilden. Före
@@ -545,7 +552,7 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             // stället blir förstoringen ett eget, momentant steg som hinner före zoomen – två
             // händelser i följd i stället för en.
             ? "fixed inset-x-0 top-0 bottom-[calc(min(var(--sheet-h,50svh),70svh)_-_1.5rem)] transition-[bottom] duration-slow ease-default lg:sticky lg:inset-x-auto lg:bottom-auto lg:top-0 lg:h-screen lg:transition-none"
-            : "relative sticky top-0 h-[50svh]"
+            : "sticky top-0 h-[50svh]"
         }`}
       >
         {/* ---- topp-rad / verktyg ---- */}
@@ -1729,13 +1736,15 @@ function AddButton({ style, className = "", label, onClick }: { style: React.CSS
     <button
       onClick={onClick}
       style={{ ...style, transition }}
+      aria-label={label}
       className={`group absolute z-10 flex h-10 items-center overflow-hidden border border-border bg-card rounded-button hover:border-primary ${className}`}
     >
       <span className="flex h-9 w-9 items-center justify-center"><Plus size={18} /></span>
-      {/* Etiketten fälls ut vid hover – på touch står den framme direkt. Utan det blir
-          första trycket ett "hovra"-tryck (webbläsaren sväljer klicket) och knappen
-          skulle kräva två tryck. */}
-      <span className="max-w-[180px] overflow-hidden whitespace-nowrap pr-4 text-sm font-semibold transition-all duration-base [@media(hover:hover)]:max-w-0 [@media(hover:hover)]:pr-0 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:max-w-[180px] [@media(hover:hover)]:group-hover:pr-4 [@media(hover:hover)]:group-hover:opacity-100">
+      {/* Etiketten är kollapsad som grundläge och fälls ut vid hover. På touch finns ingen
+          hover, så knappen förblir en ren ikonknapp – etiketten når skärmläsare via
+          aria-label. Utfällningen är låst till [@media(hover:hover)] just för att touch
+          annars kan trigga group-hover på första trycket och kräva två tryck. */}
+      <span className="max-w-0 overflow-hidden whitespace-nowrap pr-0 text-sm font-semibold opacity-0 transition-all duration-base [@media(hover:hover)]:group-hover:max-w-[180px] [@media(hover:hover)]:group-hover:pr-4 [@media(hover:hover)]:group-hover:opacity-100">
         {label}
       </span>
     </button>
