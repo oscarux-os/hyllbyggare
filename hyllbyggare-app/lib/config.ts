@@ -728,3 +728,43 @@ export function buildConfigState(
   if (opts.front) return setWoodFront(s, opts.front);
   return s;
 }
+
+// --- pris ---
+//
+// Prisuttrycket bodde inline i Configurator. Det ligger här nu för att två ytor ska kunna
+// visa samma summa utan att duplicera reglerna: byggaren och produktsidan (/lab/anpassa).
+// Faktorerna är representativa, inte hämtade från ACTONA.
+
+/** Stängd yta i möbeln, span-vägd: ett fack som spänner två kolumner räknas som två. */
+export function closedSpan(S: State): number {
+  let closed = 0;
+  allCells(S).forEach((c) => c.type !== "o" && (closed += c.span));
+  return closed;
+}
+
+/**
+ * Kampanjpris i kronor. `handleId` finns som parameter eftersom anroparen validerar
+ * handtaget mot HANDLES innan det används – ett okänt id ska prissättas som default,
+ * inte som gratis.
+ */
+export function priceOf(S: State, handleId: string = S.handle): number {
+  return (
+    S.cols * S.rows.length * 650 +
+    closedSpan(S) * 420 +
+    (S.mount === "staende" ? 500 : 0) +
+    (S.material === "ek" ? 1200 : 0) +
+    // Glaset prissätts på förekomst, inte på ett globalt stilvärde – det sitter numera på
+    // luckan. Trästilen ligger kvar som ett tillägg på hela möbeln.
+    (usesGlass(S) ? 900 : 0) +
+    (S.front === "slats" ? 500 : 0) +
+    (handleId === "push" ? 400 : handleId === "h3" ? 250 : handleId === "h2" ? 150 : 0)
+  );
+}
+
+/**
+ * Ordinarie pris så att kampanjpriset är exakt 30 % rabatt (pris = 0,7 × ordinarie),
+ * avrundat till jämna 5 kr – matchar "−30%"-badgen.
+ */
+export function listPriceOf(S: State, handleId: string = S.handle): number {
+  return Math.round(priceOf(S, handleId) / 0.7 / 5) * 5;
+}

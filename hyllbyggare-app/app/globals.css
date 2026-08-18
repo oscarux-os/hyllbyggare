@@ -99,6 +99,17 @@
   --font-body: "Source Sans 3", "Source Sans Pro", system-ui, sans-serif;
 
   --radius-button: 0.25rem;
+
+  /* Byggaren på mobil: hur ytan delas mellan möbeln och valen.
+     --preview-h  = bildens höjd i helhetsvyn. Samma värde används av sömmen där valen möter
+                    bilden och som reservvärde innan redigeringsarket hunnit mätas – tre
+                    ställen som måste vara identiska, därför en variabel.
+     --sheet-max  = taket för redigeringsarket. Arket är annars så högt som dess innehåll
+                    kräver; det här är vad som hindrar ett långt ark från att kväva möbeln.
+     De två läses som ett par: tillsammans avgör de hur stor möbeln får vara på en telefon.
+     Arket ligger utanför byggarens <main>, så de bor här och inte som inline-stil. */
+  --preview-h: 62svh;
+  --sheet-max: 52svh;
 }
 
 @layer base {
