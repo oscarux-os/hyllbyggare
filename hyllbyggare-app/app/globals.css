@@ -200,3 +200,21 @@ body.hide-site-header #site-header {
 .fade-in {
   animation: fade-in 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* Kortrutnätets entré på produktsidan, ett kort i taget. `backwards` är inte kosmetika:
+   utan den står ett kort med fördröjning synligt och HOPPAR till opacity 0 när dess
+   animation startar. Ingen egen @keyframes – copy-enter ovan är precis den rörelsen. */
+.stagger-in {
+  animation: copy-enter 250ms cubic-bezier(0.4, 0, 0.2, 1) backwards;
+}
+
+/* Mobilarket på produktsidan glider upp från kanten. .sheet-enter (16 px + fade) är en nudge
+   – rätt när arket lägger sig över något som redan finns, för litet när arket ÄR händelsen.
+   Samma 350 ms som bildens underkant, så de två kanterna rör sig som en. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+.sheet-up {
+  animation: sheet-up 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
