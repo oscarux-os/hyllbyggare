@@ -1,4 +1,9 @@
-// Ångra + ändringslogg för byggaren.
+// Ångra för byggaren.
+//
+// UI:t visar bara Ångra (i verktygsmenyn) och tangentbordsgenvägarna. Hooken bär ändå hela
+// listan med etiketter och en markör man kan hoppa fritt i – tidslinjen som ritade upp dem
+// är borttagen ur gränssnittet, inte ur modellen, och kan tas tillbaka utan att röra
+// byggarens setS-anrop.
 //
 // Historiken är en lista med ögonblicksbilder av hela State och en markör som pekar ut var
 // man står. Ångra flyttar markören bakåt; en ny ändring när man står bakåt kapar svansen och
