@@ -90,11 +90,26 @@ export default function Anpassa() {
     return () => ro.disconnect();
   }, [topic, isLg]);
 
-  // Möbeln ska gå fri från arket när det är uppe. Bara det som växer förbi den redan
-  // reserverade ytan behöver kompenseras – och ett ämne får överlappa med flit.
-  const padBottom = !isLg && up
-    ? Math.max(0, SHEET_INSET + sheetH - RESERVED - (topic ? SHEET_OVERLAP : 0))
+  // Vem som viker sig när arket är uppe – möbeln eller bilden – beror på vad arket visar.
+  //
+  // "Dina val" är en sammanfattning man skjuter upp för att läsa och ner igen. Den lägger
+  // sig ÖVER bilden: möbeln står kvar i exakt samma storlek och arket skymmer nederkanten
+  // så länge man tittar. Att i stället trycka undan möbeln kostade nästan hela bilden –
+  // arket är högt, och kompensationen krympte möbeln till en bråkdel för en yta man ändå
+  // stänger igen efter ett par sekunder.
+  //
+  // Ett ämne är tvärtom något man ARBETAR i: då måste det man ändrar synas medan man
+  // ändrar det, så där flyttar möbeln undan – förutom SHEET_OVERLAP, som arket får
+  // överlappa med flit så att det läser som att ligga över bilden och inte under den.
+  const padBottom = !isLg && up && topic
+    ? Math.max(0, SHEET_INSET + sheetH - RESERVED - SHEET_OVERLAP)
     : 0;
+
+  // Att arket lägger sig över bilden får inte betyda att möbeln hamnar bakom det. Den flyttar
+  // därför upp i stället – halva den yta arket döljer, vilket är precis vad som krävs för att
+  // en möbel som stod mitt i ramen ska stå mitt i det som är kvar av den. Storleken rörs inte;
+  // det är hela skillnaden mot `padBottom`, som köper samma frihöjd genom att krympa möbeln.
+  const coveredByVal = !isLg && up && !topic ? Math.max(0, SHEET_INSET + sheetH - RESERVED) : 0;
 
   // Gester: dra eller scrolla uppåt skjuter upp kortytan, nedåt lägger den tillbaka. Sidan har
   // ingen egen scroll, så hjulet och dragningen är lediga att betyda precis det här.
@@ -126,10 +141,12 @@ export default function Anpassa() {
     };
   }, [isLg, topic]);
 
-  // Produktsidan har egen rubrik och egen köpknapp – den globala headern är i vägen.
+  // Sidan är en produktsida och ska sitta i sajten – därför står den globala headern kvar
+  // på desktop. På mobil döljer klassen den: vyn är exakt en skärmhöjd utan scroll, och en
+  // header ovanför skulle skjuta arket ur bild. Regeln ligger i globals.css.
   useLayoutEffect(() => {
-    document.body.classList.add("hide-site-header");
-    return () => document.body.classList.remove("hide-site-header");
+    document.body.classList.add("anpassa-page");
+    return () => document.body.classList.remove("anpassa-page");
   }, []);
 
   /* -------------------------------------------------------------- härlett */
@@ -189,6 +206,8 @@ export default function Anpassa() {
     <DinaVal
       S={S}
       added={added}
+      price={price}
+      listPrice={listPrice}
       onOpen={open}
       onToggle={isLg ? undefined : () => setValOpen((v) => !v)}
       open={valOpen}
@@ -199,7 +218,7 @@ export default function Anpassa() {
 
   return (
     // Mobil: exakt en vyhöjd, ingen scroll. Desktop: vanligt flöde.
-    <main className="flex h-[100svh] flex-col overflow-hidden bg-muted text-foreground lg:block lg:h-auto lg:min-h-screen lg:overflow-visible">
+    <main className="flex h-[100svh] flex-col overflow-hidden bg-surface text-foreground lg:block lg:h-auto lg:min-h-0 lg:overflow-visible">
       <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-2 lg:gap-0 lg:overflow-visible lg:px-[120px] lg:pt-16">
         {/* ---- vänster: rubrik + bild ---- */}
         <div className="flex min-h-0 flex-1 flex-col lg:flex-none">
@@ -213,12 +232,13 @@ export default function Anpassa() {
               <div>
                 <h1 className="font-heading font-medium text-2xl leading-6 tracking-tight text-foreground">Anamosa</h1>
                 <Text className="text-muted-foreground lg:mt-1">{category?.name ?? "Bokhylla"}</Text>
-                {/* Priset står här och inte i panelen: då syns det i alla lägen. */}
-                <p className="mt-1 flex items-baseline gap-2">
+                {/* Mobil: priset står vid titeln, för där finns ingen annan plats som syns
+                    i alla lägen. Desktop: det sitter nere vid köpknappen i "Dina val". */}
+                <p className="mt-1 flex items-baseline gap-2 lg:hidden">
                   <span className="font-heading font-medium text-2xl leading-6 tracking-tight text-sale">
                     <RollingPrice value={price} />:-
                   </span>
-                  <span className="font-heading font-medium text-xl leading-5 tracking-tight text-muted-foreground line-through">{listPrice}:-</span>
+                  <span className="font-heading font-medium text-2xl leading-6 tracking-tight text-muted-foreground line-through">{listPrice}:-</span>
                 </p>
               </div>
               <button
@@ -230,7 +250,9 @@ export default function Anpassa() {
             </div>
           </div>
 
-          <section className="min-h-0 flex-1 lg:h-[484px] lg:flex-none">
+          {/* stage-cap: taket som håller punkterna och verktygen kvar vid bilden i höga
+              ramar i stället för att låta ramen växa förbi vad möbeln kan fylla. */}
+          <section className="stage-cap min-h-0 flex-1 lg:h-[484px] lg:flex-none">
             <Stage
               S={S}
               handleId={handleId}
@@ -239,6 +261,7 @@ export default function Anpassa() {
               lift={lift}
               showDims={showDims}
               padBottom={padBottom}
+              shiftUp={coveredByVal / 2}
             />
           </section>
 

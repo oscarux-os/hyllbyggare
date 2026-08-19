@@ -42,13 +42,16 @@ export default function TopicPanel({
   // Mobilens remsa scrollar i sidled; desktop lägger brickorna i två kolumner.
   const layout = overlay ? "row" : "grid";
   const wrap = overlay
-    ? "no-scrollbar flex gap-px overflow-x-auto rounded-[8px]"
-    : "grid grid-cols-2 gap-px overflow-hidden rounded-[8px]";
+    ? "no-scrollbar flex gap-px overflow-x-auto"
+    : "grid grid-cols-2 gap-px overflow-hidden";
 
   return (
-    <div className="flex flex-col gap-px">
+    // Ett kort, inte staplade block: bara ytterkanten är rundad och sömmarna inuti är de
+    // hårstreck som gap-px släpper igenom från sidytan bakom. Samma yta som "Dina val" –
+    // panelen byter innehåll när man öppnar ett ämne, inte form.
+    <div className="flex flex-col gap-px overflow-hidden rounded-[8px]">
       {/* rubrik */}
-      <div className="flex h-16 items-center gap-4 rounded-[8px] bg-card px-6">
+      <div className="flex h-16 items-center gap-4 bg-card px-6">
         <h2 className="flex-1 font-heading font-medium text-2xl leading-6 tracking-tight text-foreground">
           {t.title === "Ben & montering" ? "Välj ben" : `Välj ${t.title.toLowerCase()}`}
         </h2>
@@ -60,7 +63,7 @@ export default function TopicPanel({
       {/* innehåll */}
       {topic === "storlek" && (
         <div className="flex flex-col gap-px">
-          <div className="rounded-[8px] bg-card">
+          <div className="bg-card">
             <StepSlider
               label="Bredd"
               value={S.cols}
@@ -70,7 +73,7 @@ export default function TopicPanel({
               onSet={(cols) => patch({ cols, rows: applyStyle(S.style ?? "", cols, S.rows) })}
             />
           </div>
-          <div className="rounded-[8px] bg-card">
+          <div className="bg-card">
             <StepSlider
               label="Höjd"
               value={S.rows.length}
@@ -167,13 +170,13 @@ export default function TopicPanel({
       )}
 
       {topic === "tillbehor" && (
-        <div className="overflow-hidden rounded-[8px] bg-card">
+        <div className="overflow-hidden bg-card">
           <TillvalCompact added={added} onToggle={onToggleTillval} />
         </div>
       )}
 
       {/* bekräftelse – valen gäller redan, knappen stänger bara panelen */}
-      <div className="rounded-[8px] bg-card px-6 pb-6 pt-4 lg:py-6">
+      <div className="bg-card px-6 pb-6 pt-4 lg:py-6">
         <button
           type="button"
           onClick={onClose}

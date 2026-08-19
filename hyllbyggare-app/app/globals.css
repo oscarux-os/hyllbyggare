@@ -94,6 +94,14 @@
   --border: 0.9 0 0;
   --input: 0.9 0 0;
   --ring: 0.2 0 0;
+  /* Ljusare sidyta kring bilden på Anpassa (Figma: color/bg/bg-secondary #f9f9f9).
+     Egen token och inte --muted: byggaren och seriesidan behåller sin ton. */
+  --surface: 0.982 0 0;
+
+  /* Fältet som måttlinjernas etiketter stansar hål i. Etiketten måste ha exakt samma
+     färg som ytan bakom bilden, annars syns en grå ruta mitt på linjen – och den ytan
+     är olika i byggaren och på Anpassa. Därför en variabel och inte en fast klass. */
+  --stage-bg: oklch(var(--muted));
 
   --font-heading: "Bulldog", "Source Sans 3", "Source Sans Pro", system-ui, sans-serif;
   --font-body: "Source Sans 3", "Source Sans Pro", system-ui, sans-serif;
@@ -138,6 +146,37 @@
    Configurator är monterad, inte till rutten. */
 body.hide-site-header #site-header {
   display: none;
+}
+
+/* Anpassa-labbet: headern får vara kvar på desktop – sidan är en produktsida och ska sitta
+   i resten av sajten. På mobil måste den bort: den vyn är exakt en skärmhöjd utan scroll,
+   och en header ovanför skulle skjuta arket ur bild. Bakgrunden flyttas ut på body så att
+   ytan under panelen inte byter färg på höga skärmar. */
+body.anpassa-page {
+  background: oklch(var(--surface));
+  --stage-bg: oklch(var(--surface));
+}
+@media (max-width: 1023.98px) {
+  body.anpassa-page #site-header {
+    display: none;
+  }
+}
+
+/* Bildramens tak på mobil. Ramen är `flex-1` och skulle annars svälja all ledig höjd –
+   men möbeln ritas aldrig större än MAXBYGGET (6×6 moduler), se measureRef i
+   Configurator. Allt över den höjden blir död yta: bilden växer inte, den bara centreras
+   längre upp, och punkterna och verktygen under trycks ner i skärmens botten.
+
+   Taket är exakt den höjd där maxbygget precis fyller ramen:
+     innerhöjd = refH · skala,  skala = max(1, (bredd − 2·24 px luft − 2·64 px knappreserv) / refW)
+     refW = 6·64 + 2·6 = 396 px,  refH = 6·64 + 5·6 + 2·6 + 18 = 444 px
+   plus ramens egen luft (pt-10 = 40, pb-16 = 64) och knappreserven (64).
+   Överskottet hamnar då UNDER verktygsraden i stället för inuti bilden. På en vanlig
+   telefon är ramen redan lägre än taket, så där ändras ingenting. */
+@media (max-width: 1023.98px) {
+  .stage-cap {
+    max-height: calc(max(444px, (100vw - 176px) * 444 / 396) + 168px);
+  }
 }
 
 .no-scrollbar {

@@ -19,6 +19,8 @@ const config: Config = {
         accent: { DEFAULT: c("accent"), foreground: c("accent-foreground") },
         destructive: { DEFAULT: c("destructive"), foreground: c("destructive-foreground") },
         sale: { DEFAULT: c("sale"), foreground: c("sale-foreground") },
+        // Sidytan kring bilden på Anpassa – ljusare än muted, se globals.css.
+        surface: c("surface"),
         border: c("border"),
         input: c("input"),
         ring: c("ring"),
