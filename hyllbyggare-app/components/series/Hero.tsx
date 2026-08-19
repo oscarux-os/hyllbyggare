@@ -50,6 +50,19 @@ export default function Hero() {
                 <Image src="/brand/orb.png" alt="" width={24} height={24} className="shrink-0" aria-hidden />
                 Bygg din egen
               </Link>
+              {/* Det andra spåret: produktsidan som råkar vara konfigurerbar. Den ligger
+                  bredvid byggaren och inte i stället för den – de är två olika produkter, och
+                  vilken väg vi går är fortfarande ett öppet beslut. Lab-märket är därför inte
+                  kosmetika: ytan är ett spår som utvärderas, inte något som är bestämt. */}
+              <Link
+                href="/lab/anpassa"
+                className="inline-flex h-12 shrink-0 items-center justify-center gap-2 border border-foreground px-6 font-body text-xl font-semibold leading-6 tracking-[-0.3px] text-foreground rounded-button transition-colors duration-fast hover:bg-secondary active:opacity-80"
+              >
+                Anpassa
+                <span className="bg-secondary px-2 py-0.5 font-body text-xs font-normal uppercase leading-4 tracking-[0.12em] text-muted-foreground">
+                  Lab
+                </span>
+              </Link>
             </div>
           </div>
 

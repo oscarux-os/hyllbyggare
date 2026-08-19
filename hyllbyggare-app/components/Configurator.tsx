@@ -1620,14 +1620,14 @@ export function Dims({ rect, glide, width, height }: { rect: Rect; glide: boolea
         <div className="h-px w-full bg-foreground/40" />
         <span className="absolute left-0 top-0 h-3 w-px -translate-y-1/2 bg-foreground/40" />
         <span className="absolute right-0 top-0 h-3 w-px -translate-y-1/2 bg-foreground/40" />
-        <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 bg-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground">{width}</span>
+        <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 bg-[var(--stage-bg)] px-1.5 py-px text-[11px] font-medium text-muted-foreground">{width}</span>
       </div>
       {/* höjd – till vänster */}
       <div className="pointer-events-none absolute z-10" style={{ left: rect.x - 16, top: rect.y, height: rect.h, transition: move("left", "top", "height") }}>
         <div className="h-full w-px bg-foreground/40" />
         <span className="absolute left-0 top-0 h-px w-3 -translate-x-1/2 bg-foreground/40" />
         <span className="absolute left-0 bottom-0 h-px w-3 -translate-x-1/2 bg-foreground/40" />
-        <span className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap bg-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground">{height}</span>
+        <span className="absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap bg-[var(--stage-bg)] px-1.5 py-px text-[11px] font-medium text-muted-foreground">{height}</span>
       </div>
     </>
   );
