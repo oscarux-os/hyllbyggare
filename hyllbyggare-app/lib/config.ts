@@ -381,12 +381,16 @@ export function hasWoodFronts(state: State): boolean {
   return allCells(state).some((c) => (c.type === "l" || c.type === "d") && c.front !== "glass");
 }
 
-// Byt trästil på hela möbeln. Glas rörs ALDRIG: en glaslucka är av glas, inte av trä med
-// en yta, så den kan inte "bli ribbad". Trästilen skriver därför bara om de fronter som
+// Byt trästil på hela möbeln. Glas rörs som regel ALDRIG: en glaslucka är av glas, inte av trä
+// med en yta, så den kan inte "bli ribbad". Trästilen skriver därför bara om de fronter som
 // faktiskt är i trä – i raderna (och deras ev. utskrivna fack) och i kolumnernas fack.
-// Vill man ta bort glaset gör man det på luckan, i bandredigeringen.
-export function setWoodFront(s: State, front: WoodFront): State {
-  const keep = (f: Front): Front => (f === "glass" ? "glass" : front);
+// I byggaren tar man bort glaset på luckan, i bandredigeringen.
+//
+// `replaceGlass` är för ytor som väljer front för HELA möbeln (produktsidan): där är slät,
+// ribbad och glas tre svar på samma fråga, och då måste ett träval kunna ta tillbaka en
+// glaslucka – annars är glas en enkelriktad gata.
+export function setWoodFront(s: State, front: WoodFront, replaceGlass = false): State {
+  const keep = (f: Front): Front => (f === "glass" && !replaceGlass ? "glass" : front);
   const mapCells = (cells: Cell[]) => cells.map((c) => ({ ...c, front: keep(c.front) }));
   return {
     ...s,

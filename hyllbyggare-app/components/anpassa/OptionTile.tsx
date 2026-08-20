@@ -1,73 +1,41 @@
 "use client";
 
-// Alternativbricka i en ämnespanel. Vågrät komposition ur skissen: bild till vänster, namn och
-// en rad text till höger, och en svart bock som överlappar bilden när alternativet är valt.
+// Alternativbricka: en kvadrat i panelens rutnät, utan text. Namnet står under rutnätet – ett
+// alternativ i taget behöver ingen etikett när brickorna är bilder, och skissen (Figma
+// "v4 Volvo stil konfig", 108×108) visar just det. `aria-label` bär namnet i stället.
 //
-// Två lägen, samma bricka: `grid` är desktopens tvåkolumnsrutnät, `row` är mobilens
-// horisontella remsa (fast bredd så nästa bricka glimtar fram i kanten).
+// Vald bricka ritas som en 1 px ram i foreground plus en svart bock i nedre högra hörnet.
+// Ramen ligger som `outline` med negativ offset: en border hade ändrat brickans innermått och
+// fått bilden att hoppa en pixel när man väljer.
 
-import Image from "next/image";
 import { Check } from "lucide-react";
-import { Text } from "@/components/Type";
+import OptionMedia from "./OptionMedia";
+import type { Option } from "./model";
 
 export default function OptionTile({
-  name,
-  desc,
-  image,
-  swatch,
-  visual,
-  selected,
-  layout = "grid",
+  option,
   onClick,
 }: {
-  name: string;
-  desc?: string;
-  /** Produktbild. Saknas den ritas `swatch` som färgruta i stället. */
-  image?: string;
-  swatch?: string;
-  /** Egen ritning i stället för foto – t.ex. stilarnas MiniShelf-skiss. */
-  visual?: React.ReactNode;
-  selected: boolean;
-  layout?: "grid" | "row";
+  option: Option;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={selected}
-      className={`relative flex rounded-button bg-card transition-colors duration-fast active:scale-[0.98] hover:bg-secondary ${
-        layout === "row"
-          ? "w-[127px] shrink-0 flex-col items-center justify-center gap-4 p-2 text-center"
-          : "items-center gap-4 p-6 text-left"
+      aria-pressed={option.selected}
+      aria-label={option.name}
+      title={option.name}
+      className={`relative aspect-square w-full overflow-hidden bg-surface transition-colors duration-fast hover:bg-secondary ${
+        option.selected ? "outline outline-1 -outline-offset-1 outline-foreground" : ""
       }`}
     >
-      <span className="relative block h-14 w-14 shrink-0">
-        {visual ? (
-          <span className="flex h-full w-full items-center justify-center text-foreground/70">{visual}</span>
-        ) : image ? (
-          <Image src={image} alt="" fill sizes="56px" className="fade-in object-contain" />
-        ) : (
-          <span className="block h-full w-full" style={{ background: swatch }} />
-        )}
-        {selected && layout === "grid" && <Tick className="-right-2 -top-2" />}
-      </span>
-      {selected && layout === "row" && <Tick className="right-2 top-2" />}
-      <span className={layout === "row" ? "w-full min-w-0" : "min-w-0 flex-1"}>
-        <Text as="span" variant="small" className="block truncate text-foreground">{name}</Text>
-        {desc && <Text as="span" variant="caption" className="mt-0.5 line-clamp-2 block text-muted-foreground">{desc}</Text>}
-      </span>
+      <OptionMedia media={option.media} sizes="120px" shelfScale={2.4} pad="p-3" />
+      {option.selected && (
+        <span className="check-in absolute bottom-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+          <Check size={12} strokeWidth={3} />
+        </span>
+      )}
     </button>
-  );
-}
-
-// Svart bock, 24 px, som fjädrar in när alternativet väljs (.check-in = ease-spring). På
-// desktop överlappar den bildens hörn; på mobil sitter den i brickans hörn, för där är bilden
-// centrerad och ett märke på den hade hamnat mitt i brickan.
-function Tick({ className }: { className: string }) {
-  return (
-    <span className={`check-in absolute flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground ${className}`}>
-      <Check size={12} strokeWidth={3} />
-    </span>
   );
 }

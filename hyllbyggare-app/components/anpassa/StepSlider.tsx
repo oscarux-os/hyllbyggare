@@ -1,17 +1,18 @@
 "use client";
 
 // Stegat reglage ur skissen: etikett till vänster, en skåra delad i lika segment med en prick
-// vid varje stopp, och det valda värdet i en flytande chip ovanpå skåran.
+// vid varje stopp, och det valda värdet i en ruta som står på sitt stopp.
 //
 // Interaktionen ligger i ett genomskinligt <input type="range"> ovanpå. Det ger drag, touch,
 // piltangenter och rätt roll/aria gratis – att bygga om det för hand blir alltid sämre.
 
 import { Text } from "@/components/Type";
 
-// Skåran dras in i båda ändar. Chippen är centrerad över sitt stopp, så utan indraget skulle
-// den hänga ut över kortkanten vid första och sista värdet. Indraget gäller linjen, prickarna,
-// chippen OCH inputen, annars pekar man på ett annat ställe än det man ser.
-const INSET = 28;
+// Skåran dras in i båda ändar med halva rutans bredd. Rutan är centrerad över sitt stopp, så
+// utan indraget skulle den hänga ut över panelkanten vid första och sista värdet. Indraget
+// gäller linjen, prickarna, rutan OCH inputen, annars pekar man på ett annat ställe än det
+// man ser.
+const INSET = 32;
 
 export default function StepSlider({
   label,
@@ -25,7 +26,7 @@ export default function StepSlider({
   value: number;
   min: number;
   max: number;
-  /** Värdet som text i chippen, t.ex. 4 → "155 cm". */
+  /** Värdet som text i rutan, t.ex. 4 → "155 cm". */
   format: (v: number) => string;
   onSet: (v: number) => void;
 }) {
@@ -36,9 +37,9 @@ export default function StepSlider({
   const posOf = (v: number) => `calc(${INSET}px + ${frac(v)} * (100% - ${INSET * 2}px))`;
 
   return (
-    <div className="flex items-center gap-4 p-6">
+    <div className="flex items-center gap-4">
       <Text as="span" className="w-16 shrink-0 text-foreground">{label}</Text>
-      <div className="relative h-6 flex-1">
+      <div className="relative h-10 flex-1">
         {/* skåran */}
         <span
           aria-hidden
@@ -54,10 +55,10 @@ export default function StepSlider({
             style={{ left: posOf(min + i) }}
           />
         ))}
-        {/* värdet – chippen döljer stoppet den står på, precis som i skissen */}
+        {/* värdet – rutan döljer stoppet den står på, precis som i skissen */}
         <span
           aria-hidden
-          className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap border border-border bg-card px-2 py-1 font-body text-base font-medium leading-none text-foreground transition-[left] duration-base ease-default"
+          className="absolute top-1/2 flex h-10 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center whitespace-nowrap rounded-button border border-foreground bg-card font-body text-base leading-6 text-foreground transition-[left] duration-base ease-default"
           style={{ left: posOf(value) }}
         >
           {format(value)}

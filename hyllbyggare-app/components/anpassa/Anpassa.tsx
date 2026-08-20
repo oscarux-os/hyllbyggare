@@ -1,162 +1,107 @@
 "use client";
 
-// Anpassa – en produktsida som råkar vara konfigurerbar.
+// Anpassa – konfiguratorn som ett rutnät.
 //
 // Skillnaden mot byggaren på /bygg är inte skalet utan vad kunden får styra: här finns bara
-// helhetsval (storlek, stil, ben, material, beslag, tillbehör), inga fack och inga band.
-// Möbeln äger bilden, valen ligger som kort i "Dina val", och kameran zoomar in bara när det
-// man ändrar är fysiskt litet (ben, beslag) – storlek, stil och material rör helheten.
+// helhetsval (stil, storlek, material, front, ben, handtag, tillbehör), inga fack och inga
+// band. Kameran zoomar in bara när det man ändrar är fysiskt litet (ben, handtag) – stil,
+// storlek och material rör helheten.
 //
-// Två lägen, samma innehåll:
-//   desktop – två kolumner; höger kolumn byter från "Dina val" till ämnespanelen
-//   mobil   – sidan SCROLLAR INTE. Bilden fyller vyn och "Dina val" är ett ark som skjuts upp
-//             i bild när man trycker på rubriken eller drar uppåt. Ett ämne ersätter arkets
-//             innehåll. Att inte ha någon sidscroll är hela poängen: då finns ingen
-//             scrollposition att spara, återställa eller låsa, och inget kan hamna bakom
-//             något annat.
+// Formen kommer ur skisserna (Figma "v4 Volvo stil konfig"). Tre lägen, samma yta:
+//   grid    – topprad med pris och köpknapp, och ett rutnät: möbeln till vänster, valen som
+//             fyra celler till höger. Hårstrecken mellan cellerna är sidans vita fond som
+//             lyser igenom 1 px.
+//   topic   – ett val är öppet. Toppraden SLÄCKS, bilden växer och panelen tar höger kant
+//             med brickor i rutnät och bekräftelsen pinnad i botten.
+//   detail  – "Läs mer": alternativet som egen sida, med produktfoto i stället för möbel.
+// (spec är samma layout som topic, men med produktspecifikationen i panelen.)
+//
+// Polariteten är omvänd mot den gamla panelformen: YTORNA är ljusa (--surface) och sidan är
+// vit, så sömmarna blir vita hårstreck i stället för grå. Inga radier på ytor – bara knappar.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, List, Ruler, Share2 } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { ArrowLeft, List, ReceiptText, Ruler, Share2 } from "lucide-react";
 import {
-  CATEGORIES, HANDLES, buildConfigState, priceOf, listPriceOf, realW, furnitureHeightCm,
-  FRONT_LABEL, COLORS, LEGS,
+  HANDLES, buildConfigState, priceOf, listPriceOf, realW, furnitureHeightCm,
+  FRONT_LABEL, COLORS, LEGS, type State,
 } from "@/lib/config";
+import { productById } from "@/lib/tillval";
 import { useConfigHistory } from "@/lib/history";
-import { RollingPrice, STAGE_T } from "@/components/Configurator";
-import ProductInfo from "@/components/ProductInfo";
-import { Text } from "@/components/Type";
-import { focusFor, topicById, type TopicId } from "./model";
+import { RollingPrice } from "@/components/Configurator";
+import { Heading, Text } from "@/components/Type";
+import { focusFor, sectionOptions, summaryFor, topicById, topicDisabled, type SectionId, type TopicId } from "./model";
 import Stage from "./Stage";
-import DinaVal from "./DinaVal";
+import ValGrid from "./ValGrid";
+import ProduktInfo, { anamosaSections } from "./ProduktInfo";
+import Sammanstallning, { lineOf, type CartLine } from "./Sammanstallning";
 import TopicPanel from "./TopicPanel";
+import OptionDetail, { DetailMedia } from "./OptionDetail";
 import RoundButton from "./RoundButton";
 
 // Utgångsläget: en bokhylla i Kollage-stil, samma preset som produktkorten använder.
 const START = buildConfigState("hyllor", { style: "kollage", front: "slats" })!;
-// Arket är indraget 16 px runt om (Figma: x=16, bredd 368 av 400).
-const SHEET_INSET = 16;
-// Hur mycket av arkets överkant bilden får fortsätta in bakom, så arket läser som att det
-// ligger ÖVER möbeln och inte som nästa sektion under den. Figma: 46 px.
-const SHEET_OVERLAP = 46;
-// Arkets rubrikhöjd – så mycket tittar fram i vila.
-const PEEK = 48;
-// Ytan under bilden som redan är reserverad i flödet (punkter, verktyg, arkets tittrand).
-// Arket äter av bilden först när det växer förbi den.
-const RESERVED = 152;
 
 export default function Anpassa() {
-  const router = useRouter();
   const { S, setS } = useConfigHistory(START);
   const [topic, setTopic] = useState<TopicId | null>(null);
-  const [valOpen, setValOpen] = useState(false);
+  const [detail, setDetail] = useState<{ section: SectionId; optionId: string } | null>(null);
+  const [showSpec, setShowSpec] = useState(false);
+  const [showCart, setShowCart] = useState(false);
+  // Möbeln och tillvalen som de stod när ämnet öppnades – dit ✕ återställer.
+  const [draftFrom, setDraftFrom] = useState<{ S: State; added: Set<string> } | null>(null);
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [showDims, setShowDims] = useState(false);
-  const [showSpec, setShowSpec] = useState(false);
-  // Vilken vy i karusellen som visas när inget ämne är öppet: hela möbeln, eller en närbild.
+  // Vilken vy i karusellen som visas när inget val är öppet: hela möbeln, eller en närbild.
   const [shot, setShot] = useState(0);
-
-  const [isLg, setIsLg] = useState(true);
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 1024px)");
-    const read = () => setIsLg(mq.matches);
-    read();
-    mq.addEventListener("change", read);
-    return () => mq.removeEventListener("change", read);
-  }, []);
-  useEffect(() => { if (isLg) setValOpen(false); }, [isLg]);
 
   /* ---------------------------------------------------------------- kameran */
 
-  const SHOTS: (TopicId | null)[] = useMemo(() => [null, "ben", "beslag"], []);
-  const focus = useMemo(() => focusFor(S, topic ?? SHOTS[shot] ?? null), [S, topic, shot, SHOTS]);
-
-  /* ------------------------------------------------------------------ arket */
-
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const [sheetH, setSheetH] = useState(0);
-  // Arket är uppe när ett ämne är öppet, eller när man skjutit upp kortytan. `valOpen` gäller
-  // bara mobil: på desktop finns inget ark, och ett kvarglömt true skulle gömma verktygen.
-  const up = topic !== null || (!isLg && valOpen);
-
-  // Höjden mäts på INNEHÅLLET: höjden vi sätter på arket är vårt eget resultat, så att
-  // observera arket självt vore att observera sig själv.
-  useEffect(() => {
-    const el = sheetRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setSheetH(el.offsetHeight));
-    ro.observe(el);
-    setSheetH(el.offsetHeight);
-    return () => ro.disconnect();
-  }, [topic, isLg]);
-
-  // Vem som viker sig när arket är uppe – möbeln eller bilden – beror på vad arket visar.
-  //
-  // "Dina val" är en sammanfattning man skjuter upp för att läsa och ner igen. Den lägger
-  // sig ÖVER bilden: möbeln står kvar i exakt samma storlek och arket skymmer nederkanten
-  // så länge man tittar. Att i stället trycka undan möbeln kostade nästan hela bilden –
-  // arket är högt, och kompensationen krympte möbeln till en bråkdel för en yta man ändå
-  // stänger igen efter ett par sekunder.
-  //
-  // Ett ämne är tvärtom något man ARBETAR i: då måste det man ändrar synas medan man
-  // ändrar det, så där flyttar möbeln undan – förutom SHEET_OVERLAP, som arket får
-  // överlappa med flit så att det läser som att ligga över bilden och inte under den.
-  const padBottom = !isLg && up && topic
-    ? Math.max(0, SHEET_INSET + sheetH - RESERVED - SHEET_OVERLAP)
-    : 0;
-
-  // Att arket lägger sig över bilden får inte betyda att möbeln hamnar bakom det. Den flyttar
-  // därför upp i stället – halva den yta arket döljer, vilket är precis vad som krävs för att
-  // en möbel som stod mitt i ramen ska stå mitt i det som är kvar av den. Storleken rörs inte;
-  // det är hela skillnaden mot `padBottom`, som köper samma frihöjd genom att krympa möbeln.
-  const coveredByVal = !isLg && up && !topic ? Math.max(0, SHEET_INSET + sheetH - RESERVED) : 0;
-
-  // Gester: dra eller scrolla uppåt skjuter upp kortytan, nedåt lägger den tillbaka. Sidan har
-  // ingen egen scroll, så hjulet och dragningen är lediga att betyda precis det här.
-  useEffect(() => {
-    if (isLg || topic) return;
-    const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) < 8) return;
-      setValOpen(e.deltaY > 0);
-    };
-    let y0: number | null = null;
-    const onStart = (e: TouchEvent) => { y0 = e.touches[0]?.clientY ?? null; };
-    const onMove = (e: TouchEvent) => {
-      if (y0 === null) return;
-      const dy = (e.touches[0]?.clientY ?? y0) - y0;
-      if (Math.abs(dy) < 28) return;
-      setValOpen(dy < 0); // finger uppåt = arket upp
-      y0 = null;
-    };
-    const onEnd = () => { y0 = null; };
-    window.addEventListener("wheel", onWheel, { passive: true });
-    window.addEventListener("touchstart", onStart, { passive: true });
-    window.addEventListener("touchmove", onMove, { passive: true });
-    window.addEventListener("touchend", onEnd, { passive: true });
-    return () => {
-      window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("touchstart", onStart);
-      window.removeEventListener("touchmove", onMove);
-      window.removeEventListener("touchend", onEnd);
-    };
-  }, [isLg, topic]);
-
-  // Sidan är en produktsida och ska sitta i sajten – därför står den globala headern kvar
-  // på desktop. På mobil döljer klassen den: vyn är exakt en skärmhöjd utan scroll, och en
-  // header ovanför skulle skjuta arket ur bild. Regeln ligger i globals.css.
-  useLayoutEffect(() => {
-    document.body.classList.add("anpassa-page");
-    return () => document.body.classList.remove("anpassa-page");
-  }, []);
+  // Vinklarna i vila: hela möbeln, benen, luckorna. Närbilden på luckan faller bort på en helt
+  // öppen möbel – det finns ingen lucka att zooma in på. Samma villkor som cellen i rutnätet.
+  const SHOTS: (TopicId | null)[] = useMemo(
+    () => ([null, "ben", "luckor"] as (TopicId | null)[]).filter((id) => !id || !topicDisabled(S, id)),
+    [S],
+  );
+  // Faller en vinkel bort medan man står på den hamnar vi på den sista som finns kvar.
+  const shotIndex = Math.min(shot, SHOTS.length - 1);
+  const focus = useMemo(() => focusFor(S, topic ?? SHOTS[shotIndex] ?? null), [S, topic, shotIndex, SHOTS]);
 
   /* -------------------------------------------------------------- härlett */
 
   const handleId = HANDLES.some((h) => h[0] === S.handle) ? S.handle : HANDLES[0][0];
   const frame = S.color;
   const lift = S.mount === "vagg" ? 40 : 0;
-  const price = priceOf(S, handleId).toLocaleString("sv-SE");
-  const listPrice = listPriceOf(S, handleId).toLocaleString("sv-SE");
-  const category = CATEGORIES.find((c) => c.id === S.category);
+  // Bildcellens rubrik: vad möbeln ÄR ("Bokhylla Kollage") och måtten under.
+  const furnitureSummary = summaryFor(S, "stil");
+  // Konfiguratorn lägger flera varor i korgen: möbeln plus varje valt tillbehör. Priset i
+  // toppraden är därför summan av dem – annars säger knappen "4 produkter" intill en siffra
+  // som bara gäller en av dem.
+  const cartLines: CartLine[] = [
+    {
+      id: "mobel",
+      name: furnitureSummary.title,
+      detail: `${furnitureSummary.value} · ${COLORS[S.material].find((c) => c[0] === S.color)?.[1] ?? S.color}`,
+      price: priceOf(S, handleId),
+      listPrice: listPriceOf(S, handleId),
+    },
+    ...Array.from(added)
+      .map(productById)
+      .filter((p): p is NonNullable<typeof p> => !!p)
+      .map(lineOf),
+  ];
+  const price = cartLines.reduce((a, l) => a + l.price, 0).toLocaleString("sv-SE");
+  const listPrice = cartLines.reduce((a, l) => a + (l.listPrice ?? l.price), 0).toLocaleString("sv-SE");
+
+  // Alternativet detaljvyn handlar om. Hittas det inte (t.ex. för att möbeln ändrats under
+  // vägen) faller vi tillbaka till ämnet i stället för att visa en tom sida.
+  const detailOption = detail
+    ? sectionOptions(S, detail.section).find((o) => o.id === detail.optionId) ?? null
+    : null;
+
+  const mode = detailOption ? "detail" : topic ? "topic" : "grid";
+  const open = mode !== "grid";
+  // Escape och ✕ har något att stänga så länge något ligger över rutnätet.
+  const anyOpen = open || showSpec || showCart;
 
   const toggleTillval = useCallback((id: string) => {
     setAdded((prev) => {
@@ -167,19 +112,55 @@ export default function Anpassa() {
     });
   }, []);
 
-  const open = (id: TopicId) => { setShowSpec(false); setTopic(id); };
-  const close = () => setTopic(null);
+  // Att öppna ett ämne är att börja på ett utkast: valen syns direkt i bilden, men de gäller
+  // först när man bekräftar. ✕ (och Escape) ångrar allt man gjort medan panelen var öppen och
+  // lämnar möbeln precis som den stod – annars vore det omöjligt att prova något utan att
+  // riskera det man redan valt. Tillvalen är med i ångringen: +-knappen bor i samma panel.
+  const openTopic = (id: TopicId) => {
+    setShowSpec(false);
+    setDetail(null);
+    setDraftFrom({ S, added: new Set(added) });
+    setTopic(id);
+  };
+
+  /** Bekräfta: valen står kvar, utkastet slängs. */
+  const confirmTopic = useCallback(() => {
+    setDraftFrom(null);
+    setTopic(null);
+  }, []);
+
+  /** Avbryt: möbeln och tillvalen tillbaka till läget innan panelen öppnades. */
+  const cancelTopic = useCallback(() => {
+    if (draftFrom) {
+      setS(() => draftFrom.S);
+      setAdded(draftFrom.added);
+    }
+    setDraftFrom(null);
+    setTopic(null);
+  }, [draftFrom, setS]);
+
+  // Ett steg tillbaka: detaljvyn stängs mot ämnet, specen mot rutnätet, och ämnet ångras.
+  const back = useCallback(() => {
+    // Överläggen ligger överst och stängs först.
+    if (showCart) setShowCart(false);
+    else if (showSpec) setShowSpec(false);
+    else if (detail) setDetail(null);
+    else cancelTopic();
+  }, [showCart, showSpec, detail, cancelTopic]);
 
   useEffect(() => {
-    if (!topic && !showSpec) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (showSpec) setShowSpec(false);
-      else close();
-    };
+    if (!anyOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") back(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [topic, showSpec]);
+  }, [anyOpen, back]);
+
+  // Vyn är hela fönstret: skissen har ingen sajtheader ovanför rutnätet, och en header hade
+  // skjutit cellerna ur bild. Regeln (och den vita fonden) ligger i globals.css.
+  useLayoutEffect(() => {
+    document.body.classList.add("anpassa-page");
+    return () => document.body.classList.remove("anpassa-page");
+  }, []);
 
   const spec: [string, string][] = [
     ["Bredd", realW(S.cols) + " cm"],
@@ -187,154 +168,218 @@ export default function Anpassa() {
     ["Djup", "40 cm"],
     ["Material", COLORS[S.material].find((c) => c[0] === S.color)?.[1] ?? S.color],
     ["Frontstil", FRONT_LABEL[S.front]],
-    ["Beslag", HANDLES.find((h) => h[0] === handleId)?.[1] ?? "-"],
+    ["Handtag", HANDLES.find((h) => h[0] === handleId)?.[1] ?? "-"],
     ["Montering", S.mount === "vagg" ? "Väggmonterad" : "Stående på " + (LEGS.find((l) => l[0] === S.leg)?.[1] ?? "ben")],
   ];
-
-  // Samma innehåll oavsett var det visas: höger kolumn på desktop, arket på mobil.
-  const panel = topic ? (
-    <TopicPanel
-      topic={topic}
-      S={S}
-      setS={setS}
-      added={added}
-      onToggleTillval={toggleTillval}
-      onClose={close}
-      overlay={!isLg}
-    />
-  ) : (
-    <DinaVal
-      S={S}
-      added={added}
-      price={price}
-      listPrice={listPrice}
-      onOpen={open}
-      onToggle={isLg ? undefined : () => setValOpen((v) => !v)}
-      open={valOpen}
-    />
-  );
 
   /* --------------------------------------------------------------- render */
 
   return (
-    // Mobil: exakt en vyhöjd, ingen scroll. Desktop: vanligt flöde.
-    <main className="flex h-[100svh] flex-col overflow-hidden bg-surface text-foreground lg:block lg:h-auto lg:min-h-0 lg:overflow-visible">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col overflow-hidden lg:grid lg:grid-cols-2 lg:gap-0 lg:overflow-visible lg:px-[120px] lg:pt-16">
-        {/* ---- vänster: rubrik + bild ---- */}
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-none">
-          <div className="flex flex-col gap-3 px-4 pt-4 lg:flex-row lg:items-center lg:gap-6 lg:px-0 lg:pt-0">
-            <div className="flex">
-              <RoundButton label="Tillbaka" size={isLg ? 48 : 40} onClick={() => router.back()}>
-                <ArrowLeft size={20} />
+    // Desktop: exakt en vyhöjd, ingen scroll – rutnätet ÄR sidan. Mobil scrollar som vanligt
+    // (staplat), tills den får en egen runda.
+    <main className="min-h-[100svh] bg-card text-foreground lg:h-[100svh] lg:overflow-hidden">
+      <div className="flex h-full min-h-0 flex-col p-4 lg:p-6">
+        {/* ---- topprad: bara i vila. Ett öppet val äger hela vyn (skissen). ---- */}
+        {!open && (
+          <div className="mb-4 flex flex-col gap-4 sm:h-16 sm:flex-row sm:items-center lg:mb-px">
+            {/* Tillbaka står först i läsordningen, inte mitt i bildens vänsterkant: att lämna
+                sidan är navigation och hör ihop med rubriken, inte med verktygen för bilden. */}
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {/* Tillbaka till serien, inte till historiken: sidan nås också via delade länkar
+                  och då finns det inget "bakåt" att gå till. */}
+              <RoundButton label="Tillbaka till Anamosa" tone="bare" href="/anamosa">
+                <ArrowLeft size={24} />
               </RoundButton>
+              <Heading level="h2" as="h1" className="min-w-0 flex-1 text-[32px] leading-8">
+                Bygg din egen Anamosa
+              </Heading>
             </div>
-            <div className="flex flex-1 items-start justify-between gap-4 lg:block">
-              <div>
-                <h1 className="font-heading font-medium text-2xl leading-6 tracking-tight text-foreground">Anamosa</h1>
-                <Text className="text-muted-foreground lg:mt-1">{category?.name ?? "Bokhylla"}</Text>
-                {/* Mobil: priset står vid titeln, för där finns ingen annan plats som syns
-                    i alla lägen. Desktop: det sitter nere vid köpknappen i "Dina val". */}
-                <p className="mt-1 flex items-baseline gap-2 lg:hidden">
-                  <span className="font-heading font-medium text-2xl leading-6 tracking-tight text-sale">
-                    <RollingPrice value={price} />:-
-                  </span>
-                  <span className="font-heading font-medium text-2xl leading-6 tracking-tight text-muted-foreground line-through">{listPrice}:-</span>
-                </p>
+            <div className="flex items-center gap-6">
+              <p className="flex items-baseline gap-2">
+                <span className="font-heading font-medium text-2xl leading-6 tracking-tight text-sale">
+                  <RollingPrice value={price} />:-
+                </span>
+                <span className="font-heading font-medium text-2xl leading-6 tracking-tight text-muted-foreground line-through">
+                  {listPrice}:-
+                </span>
+              </p>
+              {/* Två knappar i par: den vänstra visar VILKA varor det blir, den högra säger hur
+                  många och lägger dem i korgen. Samma höjd och radie – den ena i kontur, den
+                  andra fylld, så det syns vilken som är handlingen. Själva köpet finns inte i
+                  labbet: primärknappen är attrapp, som förut. */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Visa varorna som läggs i varukorgen"
+                  title="Visa varorna"
+                  onClick={() => setShowCart(true)}
+                  // 40 × 40: exakt samma höjd som köpknappen intill (Figmas Button/md är 16/20
+                  // + 10 px luft = 40), så paret står jämnt.
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-button border border-foreground bg-card text-foreground transition-colors duration-fast hover:bg-secondary"
+                >
+                  <ReceiptText size={20} />
+                </button>
+                <button
+                  type="button"
+                  className="rounded-button bg-primary px-4 py-2.5 font-body text-base font-semibold leading-5 text-primary-foreground transition-opacity duration-fast hover:opacity-90 active:opacity-80"
+                >
+                  {cartLines.length === 1 ? "Lägg i varukorg" : `Lägg ${cartLines.length} produkter i varukorg`}
+                </button>
               </div>
-              <button
-                type="button"
-                className="shrink-0 rounded-button bg-primary px-6 py-3 font-body text-xl font-semibold text-primary-foreground transition-opacity duration-fast hover:opacity-90 active:opacity-80 lg:hidden"
-              >
-                Köp
-              </button>
             </div>
           </div>
+        )}
 
-          {/* stage-cap: taket som håller punkterna och verktygen kvar vid bilden i höga
-              ramar i stället för att låta ramen växa förbi vad möbeln kan fylla. */}
-          <section className="stage-cap min-h-0 flex-1 lg:h-[484px] lg:flex-none">
-            <Stage
-              S={S}
-              handleId={handleId}
-              frame={frame}
-              focus={focus}
-              lift={lift}
-              showDims={showDims}
-              padBottom={padBottom}
-              shiftUp={coveredByVal / 2}
-            />
+        {/* ---- rutnätet ---- */}
+        <div
+          className={`grid min-h-0 flex-1 gap-px bg-card ${
+            open ? "lg:grid-cols-[1fr_463px]" : "lg:grid-cols-2"
+          }`}
+        >
+          {/* vänster: bildytan. I detaljläget visas alternativets foto i stället för möbeln. */}
+          <section className="relative flex min-h-[52svh] flex-col bg-surface lg:min-h-0">
+            {mode === "detail" && detailOption ? (
+              <DetailMedia option={detailOption} />
+            ) : (
+              <>
+                {/* Rubriken i bildcellen är samtidigt ingången till stil och storlek. */}
+                {!open && (
+                  <button
+                    type="button"
+                    aria-label="Välj storlek och stil"
+                    onClick={() => openTopic("stil")}
+                    className="group flex flex-col items-start p-6 text-left"
+                  >
+                    <Text as="span" className="font-medium text-foreground group-hover:underline">
+                      {furnitureSummary.title}
+                    </Text>
+                    <Text as="span" variant="small" className="text-muted-foreground">
+                      {furnitureSummary.value}
+                    </Text>
+                  </button>
+                )}
+
+                <div className="relative min-h-0 flex-1">
+                  <Stage S={S} handleId={handleId} frame={frame} focus={focus} lift={lift} showDims={showDims} />
+
+                  {/* Möbeln själv är en knapp: trycker man på den öppnas panelen där storlek
+                      och stil väljs i samma vy (Figma 251:17385). Formen är det man pekar på
+                      när man pekar på möbeln. */}
+                  {!open && (
+                    <button
+                      type="button"
+                      aria-label="Välj storlek och stil"
+                      onClick={() => openTopic("stil")}
+                      className="absolute inset-0 z-10"
+                    />
+                  )}
+
+                  {/* Verktygen står som en lodrät kolumn vid vänsterkanten, som i skissen –
+                      och bara i vila: ett öppet val äger vyn och stängs med ✕ eller Escape. */}
+                  {!open && (
+                  <div className="absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-2">
+                    <RoundButton
+                      label="Dela"
+                      tone="bare"
+                      onClick={() => {
+                        if (typeof navigator !== "undefined" && navigator.share) navigator.share({ url: window.location.href }).catch(() => {});
+                        else navigator.clipboard?.writeText(window.location.href);
+                      }}
+                    >
+                      <Share2 size={20} />
+                    </RoundButton>
+                    <RoundButton label="Visa mått" tone="bare" onClick={() => setShowDims((v) => !v)}>
+                      <Ruler size={20} className={showDims ? "text-sale" : undefined} />
+                    </RoundButton>
+                    <RoundButton label="Specifikation" tone="bare" onClick={() => setShowSpec(true)}>
+                      <List size={20} />
+                    </RoundButton>
+                  </div>
+                  )}
+                </div>
+
+                {/* Vinklarna: hela möbeln, benen, handtagen. Bara i vila – ett öppet val
+                    styr kameran självt, och raden ska inte äta höjd när den är tom. */}
+                {!open && (
+                  <div className="flex h-6 shrink-0 items-center justify-center gap-2 pb-6">
+                    {SHOTS.map((sh, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        aria-label={sh ? "Närbild: " + topicById(sh).title : "Hela möbeln"}
+                        onClick={() => setShot(i)}
+                        className={`h-1.5 w-1.5 rounded-full transition-colors duration-fast ${i === shotIndex ? "bg-foreground" : "bg-border"}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </section>
 
-          {/* Punkter och verktyg har FAST höjd även när innehållet är borta: annars ändrar
-              bildens höjd sig i samma ögonblick som arket rör sig, och de två rörelserna
-              slåss om samma 350 ms. */}
-          <div className="flex h-6 items-center justify-center gap-2 lg:hidden">
-            {!up &&
-              SHOTS.map((sh, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  aria-label={sh ? "Närbild: " + topicById(sh).title : "Hela möbeln"}
-                  onClick={() => setShot(i)}
-                  className={"h-1.5 w-1.5 rounded-full transition-colors duration-fast " + (i === shot ? "bg-foreground" : "bg-border")}
-                />
-              ))}
-          </div>
-          <div className="flex h-14 items-center justify-center lg:h-auto lg:pt-2">
-            {!up && (
-              <div className="flex items-center justify-center gap-3">
-                <RoundButton
-                  label="Dela"
-                  size={isLg ? 48 : 40}
-                  onClick={() => {
-                    if (typeof navigator !== "undefined" && navigator.share) navigator.share({ url: window.location.href }).catch(() => {});
-                    else navigator.clipboard?.writeText(window.location.href);
-                  }}
-                >
-                  <Share2 size={20} />
-                </RoundButton>
-                <RoundButton label="Visa mått" size={isLg ? 48 : 40} onClick={() => setShowDims((v) => !v)}>
-                  <Ruler size={20} className={showDims ? "text-sale" : undefined} />
-                </RoundButton>
-                <RoundButton label="Specifikation" size={isLg ? 48 : 40} onClick={() => setShowSpec((v) => !v)}>
-                  <List size={20} />
-                </RoundButton>
-              </div>
+          {/* höger: valen i vila, panelen när något är öppet. */}
+          <div key={mode + (topic ?? "") + (detail?.optionId ?? "")} className={open ? "panel-enter-right min-h-0 p-4 lg:p-0 lg:pl-6" : "panel-enter-left min-h-0"}>
+            {mode === "detail" && detailOption ? (
+              <OptionDetail
+                S={S}
+                section={detail!.section}
+                option={detailOption}
+                onSelect={() => { setS(detailOption.apply); setDetail(null); }}
+                onClose={back}
+              />
+            ) : mode === "topic" && topic ? (
+              <TopicPanel
+                topic={topic}
+                S={S}
+                setS={setS}
+                added={added}
+                onToggleTillval={toggleTillval}
+                onConfirm={confirmTopic}
+                onCancel={cancelTopic}
+                onDetail={(section, optionId) => setDetail({ section, optionId })}
+              />
+            ) : (
+              <ValGrid S={S} added={added} onOpen={openTopic} />
             )}
           </div>
-          {/* Tittranden: arkets rubrik ligger här i vila. */}
-          <div className="shrink-0 lg:hidden" style={{ height: PEEK + SHEET_INSET }} />
         </div>
-
-        {/* ---- höger: bara desktop. På mobil bor samma innehåll i arket nedan. ----
-             Villkoret är JS och inte bara CSS: `panel` innehåller sex kort med bilder och
-             egna animationer, och två uppsättningar i DOM:en vore dubbla knappar, dubbla
-             bildhämtningar och dubbel stagger. */}
-        {isLg && (
-        <div className="flex min-h-[684px] flex-col justify-center pl-[120px]">
-          {showSpec ? (
-            <div key="spec" className="panel-enter-right rounded-[8px] bg-card p-6">
-              <ProductInfo spec={spec} />
-            </div>
-          ) : (
-            <div key={topic ?? "dinaval"} className={topic ? "panel-enter-right" : "panel-enter-left"}>
-              {panel}
-            </div>
-          )}
-        </div>
-        )}
       </div>
 
-      {/* ---- mobilens ark: kortytan i vila, ämnet när ett är öppet ---- */}
-      {!isLg && (
+      {/* ---- sammanställningen: vad knappen faktiskt lägger i korgen ---- */}
+      {showCart && (
         <div
-          style={{
-            transform: up ? undefined : "translateY(calc(100% - " + PEEK + "px))",
-            transition: "transform " + STAGE_T,
-          }}
-          className="no-scrollbar fixed inset-x-4 bottom-4 z-40 max-h-[calc(100svh-8rem)] overflow-y-auto"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 lg:p-8"
+          onClick={back}
+          role="presentation"
         >
-          <div ref={sheetRef}>{panel}</div>
+          <div
+            role="dialog"
+            aria-modal
+            aria-label="Sammanställning"
+            onClick={(e) => e.stopPropagation()}
+            className="sheet-enter flex max-h-[86svh] w-full min-h-0 flex-col bg-card sm:max-w-[560px]"
+          >
+            <Sammanstallning lines={cartLines} onClose={() => setShowCart(false)} onAdd={() => setShowCart(false)} />
+          </div>
+        </div>
+      )}
+
+      {/* ---- produktinfon som överlägg: sidan ligger kvar bakom och mörknar ---- */}
+      {showSpec && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 lg:p-8"
+          onClick={back}
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal
+            aria-label="Produktinformation"
+            onClick={(e) => e.stopPropagation()}
+            className="sheet-enter flex h-[86svh] w-full min-h-0 flex-col bg-card p-6 lg:h-[80svh] lg:w-[80vw]"
+          >
+            <ProduktInfo sections={anamosaSections(spec)} onClose={back} />
+          </div>
         </div>
       )}
     </main>
