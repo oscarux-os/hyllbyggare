@@ -1433,10 +1433,10 @@ function StyleOverlay({ S, onPick, onClose }: { S: State; onPick: (id: string) =
 }
 
 export const LEG_IMAGES: Record<string, string> = {
-  ek: "/legs/ek.png",
-  valnot: "/legs/valnot.png",
-  svart: "/legs/svart.png",
-  stal: "/legs/stal.png",
+  ek: "/legs/ek.webp",
+  valnot: "/legs/valnot.webp",
+  svart: "/legs/svart.webp",
+  stal: "/legs/stal.webp",
   massing: "/legs/massing.png",
 };
 
@@ -1460,9 +1460,9 @@ function LegPicker({ value, onSet }: { value: string; onSet: (v: string) => void
 }
 
 export const EK_IMAGES: Record<string, string> = {
-  "#C9A36A": "/materials/naturlig-ek.png",
-  "#DAC7B0": "/materials/vitpigmenterad-ek.png",
-  "#6B4F3A": "/materials/morkbetsad-ek.png",
+  "#C9A36A": "/materials/naturlig-ek.webp",
+  "#DAC7B0": "/materials/vitpigmenterad-ek.webp",
+  "#6B4F3A": "/materials/morkbetsad-ek.webp",
 };
 
 function MaterialPicker({ colors, value, onSet }: { colors: [string, string, string][]; value: string; onSet: (color: string) => void }) {
@@ -1485,9 +1485,9 @@ function MaterialPicker({ colors, value, onSet }: { colors: [string, string, str
 }
 
 export const FRONT_IMAGES: Record<Front, string> = {
-  plain: "/fronts/slat.png",
-  slats: "/fronts/ribbad.png",
-  glass: "/fronts/glas.jpeg",
+  plain: "/fronts/slat.webp",
+  slats: "/fronts/ribbad.webp",
+  glass: "/fronts/glas.webp",
 };
 
 export function FrontPicker({ value, onSet, fronts = ["plain", "slats", "glass"] }: {
@@ -1512,10 +1512,10 @@ export function FrontPicker({ value, onSet, fronts = ["plain", "slats", "glass"]
 }
 
 export const HANDLE_IMAGES: Record<string, string> = {
-  h1: "/handles/traknopp.avif",
-  h2: "/handles/knopp.avif",
+  h1: "/handles/traknopp.webp",
+  h2: "/handles/knopp.webp",
   h3: "/handles/handtag.webp",
-  push: "/handles/push.jpeg",
+  push: "/handles/push.webp",
 };
 
 function HandlePicker({ options, value, onSet }: { options: [string, string, string][]; value: string; onSet: (v: string) => void }) {
@@ -2177,7 +2177,10 @@ export function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, on
     // och ger luften) MINUS en fast reserv för lägg-till-knapparna som ligger 24px
     // utanför hyllan (ovanför + till höger). Då får allt plats även när rader/
     // kolumner läggs till, istället för att knapparna kläms mot kanten/verktygsraden.
-    const BTN = 64; // knapp (40px) + gap (24px)
+    // Reserven är för byggarens lägg-till-knappar, som ligger 24 px utanför hyllan. På
+    // produktsidan finns de inte (den känns igen på att den skickar ett `focus`), och då är
+    // reserven 128 px bortkastad bredd – det var den som gjorde möbeln onödigt liten där.
+    const BTN = focus ? 0 : 64; // knapp (40px) + gap (24px)
     const cs = getComputedStyle(parent);
     const pw = parent.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - BTN * 2;
     // hyllan skalas likadant oavsett montering – väggmontering flyttar bara golvet, inte hyllan
@@ -2222,7 +2225,11 @@ export function Shelf({ S, handleId, frame, active, activeCell = -1, hovered, on
     // räcker budgeten hela vägen, och då hamnar även en låg byrå mitt i bild i stället för
     // strandad i nederkanten med en tom vägg över sig. Däremellan glider det proportionerligt
     // – ingen tröskel och inget hopp när man drar i fönstret.
-    setRise(Math.min(dead, toCenter));
+    // Byggaren centrerar bara så långt den döda ytan räcker – luften ovanför hyllan är
+    // utrymme kvar att bygga på, och en tillagd rad ska växa uppåt i stället för att zooma om
+    // vyn. Produktsidan bygger inte: där är möbeln ett objekt man tittar på, och då ska den
+    // ligga mitt i sin ruta.
+    setRise(focus ? toCenter : Math.min(dead, toCenter));
     reportRef.current();
   };
   // Fönster-/containerstorlek ändras → passa alltid in på nytt. Sätts upp en gång.

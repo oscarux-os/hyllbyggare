@@ -4,7 +4,7 @@
 // Kampanjen "50% vid köp av Anamosa" ger halva priset på tillval när man köper
 // hyllan – därför räknas erbjudandepriset ut som halva ordinarie priset.
 
-export type TillvalCategory = "dekoration" | "ljus" | "vas" | "lampa";
+export type TillvalCategory = "dekoration" | "ljus" | "vas" | "lampa" | "vard";
 
 export type TillvalProduct = {
   id: string;
@@ -59,16 +59,35 @@ export const TILLVAL_PRODUCTS: TillvalProduct[] = [
   { id: "ljus-orrefors", name: "Orrefors Carat", details: "Ljuslykta H8 Ø7,5 cm", category: "ljus", price: 199, image: "/tillval/ljus_5_OrreforsCarat_199kr.jpg", recommended: true },
 ];
 
+// Vård och underhåll. Egen lista och inte en kategori i TILLVAL_PRODUCTS: de här hör till ett
+// VAL (möbeltassar under Ben, waxolja under Material) och inte till Tillbehör-listan, som
+// handlar om att inreda hyllan. Skissen visar möbeltassarna som upsell i Ben-panelen.
+export type CareProduct = Omit<TillvalProduct, "image"> & {
+  /** Produktbild. Saknas den ritar kortet en tom yta i stället för en trasig bild. */
+  image?: string;
+};
+
+export const CARE_PRODUCTS: CareProduct[] = [
+  { id: "vard-tassar", name: "Värna", details: "Möbeltassar, 24-pack", category: "vard", price: 10, image: "/tillval/mobeltassar.webp" },
+  // Waxoljan saknar produktbild – lägg en fil på /public/tillval/waxolja.webp och sätt
+  // `image` här, så visas den. Utan bild ritar kortet en tom yta i stället för en trasig bild.
+  { id: "vard-waxolja", name: "Vårda", details: "Waxolja för massiv ek, 500 ml", category: "vard", price: 199 },
+];
+
+/** Slå upp en produkt oavsett vilken lista den bor i. */
+export const productById = (id: string): CareProduct | undefined =>
+  TILLVAL_PRODUCTS.find((p) => p.id === id) ?? CARE_PRODUCTS.find((p) => p.id === id);
+
 /** Formatera ett kronbelopp, t.ex. 1234 → "1.234:-". */
 export const formatKr = (n: number) => `${n.toLocaleString("sv-SE")}:-`;
 
 /** Erbjudandebelopp (50 % vid köp av Anamosa), avrundat till hel krona. */
-export const offerAmount = (p: TillvalProduct) => Math.round(p.price / 2);
+export const offerAmount = (p: Pick<TillvalProduct, "price">) => Math.round(p.price / 2);
 
 /** Ordinarie pris formaterat, t.ex. "199:-". */
-export const ordinaryPrice = (p: TillvalProduct) => formatKr(p.price);
+export const ordinaryPrice = (p: Pick<TillvalProduct, "price">) => formatKr(p.price);
 /** Erbjudandepris (50 % vid köp av Anamosa), avrundat till hel krona. */
-export const offerPrice = (p: TillvalProduct) => formatKr(offerAmount(p));
+export const offerPrice = (p: Pick<TillvalProduct, "price">) => formatKr(offerAmount(p));
 
 /** Produkter som matchar ett filter-id. */
 export function filterProducts(filter: string): TillvalProduct[] {

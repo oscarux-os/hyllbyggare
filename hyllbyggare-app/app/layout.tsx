@@ -13,8 +13,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="sv">
       <body>
         <Header />
-        {/* Ram i max-bredden ger innehållet en referens på breda skärmar */}
-        <div className="mx-auto w-full max-w-content border-x border-border">{children}</div>
+        {/* Ram i max-bredden ger innehållet en referens på breda skärmar. Labbytan
+            (body.anpassa-page) släpper den och tar hela fönstret – se globals.css. */}
+        <div className="site-frame mx-auto w-full max-w-content border-x border-border">{children}</div>
       </body>
     </html>
   );
