@@ -77,6 +77,20 @@ export default function Configurator({ initialState = initial, onBack }: { initi
   // mobil: verktygsknapparna fälls ihop bakom en mer-knapp i hörnet så de inte tar
   // hela toppen. Öppnas som en liten kolumn under knappen. Desktop visar dem inline.
   const [toolsOpen, setToolsOpen] = useState(false);
+  // Stilväljaren ligger i ett överlägg, inte i panelen – se StyleButton nedan.
+  const [styleOpen, setStyleOpen] = useState(false);
+  useEffect(() => {
+    if (!styleOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setStyleOpen(false); };
+    window.addEventListener("keydown", onKey);
+    // Sidan bakom ska inte gå att scrolla medan överlägget ligger över den.
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [styleOpen]);
   // köpribban (pris + produktinfo) ligger fast i toppen och följer med ända
   // över Tillval – döljs när varukorgen i summeringen kommer in i vy.
   const cartRef = useRef<HTMLElement | null>(null);
@@ -686,6 +700,18 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           )}
           {/* Grundvalen: alltid i DOM på mobil (overlayn läggs ovanpå), döljs på desktop under redigering. */}
           <div key="lvl1" className={`panel-enter-left ${active !== null ? "lg:hidden" : ""}`}>
+          {/* Stilen först, men som EN knapp och inte som en rad tumnaglar.
+              Mönstren låg först i panelen en gång och flyttades ner till "Börja om": man
+              kommer hit genom att välja möbeltyp eller ett färdigt bygge – man HAR redan
+              gjort sitt första val – och möttes ändå av en rad stilar som såg ut som steg
+              ett. Knappen löser båda ändarna av det. Den tar en rad i stället för en hel
+              sektion, så den bjuder inte in på samma sätt, och den visar vilken stil man
+              faktiskt står på. Varningen om att bygget skrivs över hör hemma där man
+              trycker, alltså i överlägget. */}
+          <PanelSection title="Stil">
+            <StyleButton S={S} style={curStyle} onOpen={() => setStyleOpen(true)} />
+          </PanelSection>
+
           <PanelSection title="Storlek">
             <Range label="Bredd" value={S.cols} max={COLMAX} pill={`${widthCm} cm`} onSet={setCols} />
             {perColHeight ? (
@@ -749,23 +775,6 @@ export default function Configurator({ initialState = initial, onBack }: { initi
             </PanelSection>
           )}
 
-          {/* Mönstren låg först i panelen. Men man kommer hit genom att välja möbeltyp eller
-              ett färdigt bygge – man HAR redan gjort sitt första val – och möttes ändå av en
-              rad stilar som såg ut som steg ett. Här nere är de vad de faktiskt är: en väg
-              att börja om. pickStyle bygger om hela möbeln och släpper alla band man har
-              justerat för hand, så namnet ska varna för det innan man trycker. Linjen ovanför
-              markerar gränsen: härifrån och ned skriver man över det man byggt. */}
-          <PanelSection title="Börja om" className="border-t border-border pt-8 lg:pt-10">
-            <StylePicker S={S} onPick={pickStyle} />
-            <SelectionCopy
-              title={curStyle?.name ?? "Din egen komposition"}
-              desc={
-                curStyle
-                  ? curStyle.desc
-                  : "Du utgår från ett färdigt bygge. Väljer du ett mönster byggs möbeln om från grunden."
-              }
-            />
-          </PanelSection>
           </div>
         </div>
       </aside>
@@ -785,6 +794,16 @@ export default function Configurator({ initialState = initial, onBack }: { initi
           {bandPanel(true)}
         </div>
       </div>
+    )}
+
+    {/* Stilöverlägget. Ligger här och inte i panelen: det ska täcka bilden också, för
+        mönstren ÄR bilden – man byter inte en egenskap, man byter möbel. */}
+    {styleOpen && (
+      <StyleOverlay
+        S={S}
+        onPick={(id) => { pickStyle(id); setStyleOpen(false); }}
+        onClose={() => setStyleOpen(false)}
+      />
     )}
 
     {/* Tillval: fullskärm efter handtagssteget – rekommenderade tillbehör till
@@ -1339,18 +1358,76 @@ function colPreviewRows(styleId: string, cols = 4, units = 2): Row[] {
   );
 }
 
-function StylePicker({ S, onPick }: { S: State; onPick: (id: string) => void }) {
-  const isCol = S.axis === "kolumn";
+// Stilens tumnagel. Kolumnaxeln (skänk, byrå, TV-bänk) har ett eget mönster per kolumn och
+// måste ritas som en låg, bred silhuett – annars visar brickan en hylla som inte finns.
+function styleRows(S: State, styleId: string): Row[] {
+  const style = STYLES.find((x) => x.id === styleId);
+  if (!style) return [r({}), r({}), r({})];
+  return S.axis === "kolumn" ? colPreviewRows(styleId) : style.gen(4, [r({}), r({}), r({})]);
+}
+
+// Raden överst i panelen: vilken stil man står på, och vägen till att byta den. Det är ett
+// kvitto lika mycket som en knapp – står det "Din egen komposition" har man byggt sig bort
+// från mönstren, och då är det ingen av dem som är vald.
+function StyleButton({ S, style, onOpen }: { S: State; style?: (typeof STYLES)[number]; onOpen: () => void }) {
   return (
-    <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-      {STYLES.map((style) => (
-        <TileButton key={style.id} label={style.name} selected={S.style === style.id} onClick={() => onPick(style.id)}>
-          <span className="flex h-full w-full items-center justify-center text-foreground/70">
-            <MiniShelf rows={isCol ? colPreviewRows(style.id) : style.gen(4, [r({}), r({}), r({})])} cols={4} />
-          </span>
-        </TileButton>
-      ))}
-      <div className="h-[84px] w-px shrink-0" />
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex w-full items-center gap-4 border border-border bg-card p-3 text-left transition-colors duration-fast hover:border-foreground/40 active:scale-[0.99]"
+    >
+      <span className="flex h-16 w-20 shrink-0 items-center justify-center border border-border text-foreground/70">
+        {style && <MiniShelf rows={styleRows(S, style.id)} cols={4} />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <Text variant="body" className="block font-semibold leading-tight">
+          {style?.name ?? "Din egen komposition"}
+        </Text>
+        <Text variant="small" className="line-clamp-2 block text-muted-foreground">
+          {style?.desc ?? "Du utgår från ett färdigt bygge."}
+        </Text>
+      </span>
+      <ChevronRight size={20} className="shrink-0 text-muted-foreground" aria-hidden />
+    </button>
+  );
+}
+
+// Överlägget. Mönstren får plats att synas här – i panelen var de 84 px breda brickor, och
+// en komposition som ska jämföras med fem andra går inte att läsa i den storleken.
+function StyleOverlay({ S, onPick, onClose }: { S: State; onPick: (id: string) => void; onClose: () => void }) {
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-foreground/40 sm:items-center sm:p-6"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Välj stil"
+        onClick={(e) => e.stopPropagation()}
+        className="no-scrollbar sheet-enter max-h-[88svh] w-full overflow-y-auto rounded-t-2xl bg-card p-4 shadow-[0_-8px_24px_rgba(0,0,0,0.12)] sm:max-w-2xl sm:rounded-2xl sm:p-6 sm:shadow-[0_8px_32px_rgba(0,0,0,0.18)]"
+      >
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <Heading level="h2" className="text-[22px] leading-none lg:text-[2rem]">Välj stil</Heading>
+            {/* Varningen står HÄR och inte vid knappen: det är trycket i den här rutan som
+                skriver över bygget, och en varning man läser en sektion tidigare hinner
+                glömmas bort. pickStyle bygger om möbeln och släpper alla band man justerat. */}
+            <Text variant="small" className="mt-2 block text-muted-foreground">
+              Möbeln byggs om från grunden. Fack du har ändrat för hand skrivs över.
+            </Text>
+          </div>
+          <button
+            type="button"
+            aria-label="Stäng"
+            onClick={onClose}
+            className="flex size-10 shrink-0 items-center justify-center rounded-full text-foreground transition-colors duration-fast hover:bg-accent"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <StyleCards S={S} onPick={onPick} />
+      </div>
     </div>
   );
 }
@@ -1727,24 +1804,26 @@ function FloorLamp({ style }: { style: React.CSSProperties }) {
 }
 
 /* ---------- stilkort ---------- */
+// Rutnät och inte en sidledsremsa: i ett överlägg finns bredden, och mönster jämförs genom
+// att ligga bredvid varandra – en remsa gömmer hälften av dem bakom en scroll.
 function StyleCards({ S, onPick }: { S: State; onPick: (id: string) => void }) {
   return (
-    <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 md:-mx-5 md:px-5">
-      {STYLES.map((s) => (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {STYLES.map((st) => (
         <button
-          key={s.id}
-          onClick={() => onPick(s.id)}
-          className={`min-h-28 w-32 shrink-0 border p-2 text-left transition-colors duration-fast ${
-            S.style === s.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-accent"
+          key={st.id}
+          onClick={() => onPick(st.id)}
+          className={`border p-2 text-left transition-colors duration-fast ${
+            S.style === st.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card hover:bg-accent"
           }`}
         >
-          <span className={`flex h-12 items-center justify-center border ${S.style === s.id ? "border-primary-foreground/30" : "border-border"}`}>
-            <MiniShelf rows={s.gen(4, [r({}), r({}), r({})])} cols={4} />
+          <span className={`flex h-24 items-center justify-center border ${S.style === st.id ? "border-primary-foreground/30" : "border-border"}`}>
+            <MiniShelf rows={styleRows(S, st.id)} cols={4} />
           </span>
           <span className="mt-2 block">
-            <span className="block font-heading text-xl leading-6">{s.name}</span>
-            <span className={`mt-0.5 line-clamp-2 block text-xs leading-4 ${S.style === s.id ? "text-primary-foreground/75" : "text-muted-foreground"}`}>
-              {s.desc}
+            <span className="block font-heading text-xl leading-6">{st.name}</span>
+            <span className={`mt-0.5 line-clamp-2 block text-xs leading-4 ${S.style === st.id ? "text-primary-foreground/75" : "text-muted-foreground"}`}>
+              {st.desc}
             </span>
           </span>
         </button>
